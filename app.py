@@ -5,7 +5,7 @@ from PIL import Image
 import io
 
 st.title("Aplikasi Scan & Ekstrak KTP Online")
-st.write("Ambil foto KTP langsung dari kamera HP atau unggah file, ekstrak data otomatis!")
+st.write("Gunakan tombol di bawah untuk langsung memotret KTP dengan kamera belakang.")
 
 @st.cache_resource
 def load_reader():
@@ -14,20 +14,16 @@ def load_reader():
 with st.spinner("Memuat sistem AI pembaca KTP..."):
     reader = load_reader()
 
-# Membuat pilihan metode: Menggunakan Kamera Langsung atau Unggah File
-pilihan = st.radio("Pilih Cara Ambil Gambar:", ("Gunakan Kamera HP Langsung", "Unggah dari Galeri/File"))
-
-uploaded_file = None
-
-if pilihan == "Gunakan Kamera HP Langsung":
-    # Tombol khusus yang langsung membuka kamera HP
-    uploaded_file = st.camera_input("Ambil Foto KTP Anda")
-else:
-    uploaded_file = st.file_uploader("Pilih file foto KTP", type=['png', 'jpg', 'jpeg'])
+# Menggunakan file_uploader dengan trik HTML agar langsung membuka kamera belakang
+uploaded_file = st.file_uploader(
+    "Ambil Foto KTP (Kamera Belakang)", 
+    type=['png', 'jpg', 'jpeg'],
+    key="camera_back"
+)
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file)
-    st.image(image, caption="Foto KTP Berhasil Dimuat", use_container_width=True)
+    st.image(image, caption="Foto KTP Berhasil Diambil", use_container_width=True)
     
     if st.button("Mulai Ekstrak Data"):
         with st.spinner("Sedang memproses teks pada KTP..."):
