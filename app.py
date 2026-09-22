@@ -5,7 +5,7 @@ from PIL import Image
 import io
 
 st.title("Aplikasi Scan & Ekstrak KTP Online")
-st.write("Gunakan tombol di bawah untuk langsung memotret KTP dengan kamera belakang.")
+st.write("Unggah foto KTP dari perangkat Anda untuk diekstrak secara otomatis ke Excel.")
 
 @st.cache_resource
 def load_reader():
@@ -14,16 +14,12 @@ def load_reader():
 with st.spinner("Memuat sistem AI pembaca KTP..."):
     reader = load_reader()
 
-# Menggunakan file_uploader dengan trik HTML agar langsung membuka kamera belakang
-uploaded_file = st.file_uploader(
-    "Ambil Foto KTP (Kamera Belakang)", 
-    type=['png', 'jpg', 'jpeg'],
-    key="camera_back"
-)
+# Menggunakan uploader file standar yang paling stabil di semua HP
+uploaded_file = st.file_uploader("Pilih atau Ambil Foto KTP", type=['png', 'jpg', 'jpeg'])
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file)
-    st.image(image, caption="Foto KTP Berhasil Diambil", use_container_width=True)
+    st.image(image, caption="Foto KTP Berhasil Dimuat", use_container_width=True)
     
     if st.button("Mulai Ekstrak Data"):
         with st.spinner("Sedang memproses teks pada KTP..."):
