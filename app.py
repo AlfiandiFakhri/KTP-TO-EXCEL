@@ -17,86 +17,76 @@ with st.spinner("Memuat sistem AI pembaca KTP..."):
 
 def parse_ktp_text(text):
     data = {
-        "NIK": "",
-        "NAMA": "",
-        "Tempat/Tgl Lahir": "",
-        "Jenis Kelamin": "",
-        "Alamat": "",
-        "Agama": "",
-        "Status Perkawinan": "",
-        "Pekerjaan": "",
-        "Kewarganegaraan": "",
-        "Berlaku Hingga": ""
+        "NIK": "", "NAMA": "", "Tempat/Tgl Lahir": "", "Jenis Kelamin": "",
+        "Alamat": "", "Agama": "", "Status Perkawinan": "", "Pekerjaan": "",
+        "Kewarganegaraan": "", "Berlaku Hingga": ""
     }
     
-    # Bersihkan teks umum dari salah baca OCR
-    text_clean = text.replace("{", "3").replace("}", "").replace("|", "I")
+    # 0. Normalisasi Teks KTP/KIA untuk OCR yang kotor (Pembersih Teks)
+    text_clean = text.replace("{", "3").replace("}", "").replace("|", "I").replace("?", "7").replace("€", "E")
+    
+    # Memperbaiki salah eja (typo) umum dari OCR KTP
+    text_clean = re.sub(r'(?i)(Nara|Narna|Nam)\b', 'Nama', text_clean)
+    text_clean = re.sub(r'(?i)(Lergka)', 'Lengkap', text_clean)
+    text_clean = re.sub(r'(?i)(Terpa|Tempal|Tenpat|TenpatTgi)', 'Tempat', text_clean)
+    text_clean = re.sub(r'(?i)(Tcl)', 'Tgl', text_clean)
+    text_clean = re.sub(r'(?i)(Lahis)', 'Lahir', text_clean)
+    text_clean = re.sub(r'(?i)(Aamat|Nlamal|Nemal)', 'Alamat', text_clean)
     text_clean = re.sub(r'\s+', ' ', text_clean)
     
-    # 1. NIK (Cari angka 16 digit)
+    # 1. NIK
     nik_match = re.search(r'(?:NIK|M|K)\s*[:\.]?\s*([0-9\s]{16,20})', text_clean, re.IGNORECASE)
     if nik_match:
         nik_val = re.sub(r'\D', '', nik_match.group(1))
-        if len(nik_val) >= 16:
-            data["NIK"] = nik_val[:16]
+        if len(nik_val) >= 16: data["NIK"] = nik_val[:16]
     if not data["NIK"]:
-        # Cari angka 16 digit acak di seluruh teks
         all_nums = re.findall(r'\b[0-9]{16}\b', text_clean)
-        if all_nums:
-            data["NIK"] = all_nums[0]
-
+        if all_nums: data["NIK"] = all_nums[0]
+        
     # 2. NAMA
-    nama_match = re.search(r'Nama\s*(?:Lengkap)?\s*[:\.]?\s*([A-Z\s\.]+?)(?=\s+(?:Tempat|Alamat|Jenis|Gol|Agama|Status|Pekerjaan|Kewarganegaraan|Berlaku)|$)', text_clean, re.IGNORECASE)
-    if nama_match:
-        data["NAMA"] = nama_match.group(1).strip()
-
-    # 3. Tempat/Tgl Lahir
-    ttl_match = re.search(r'(?:Tempat|Tgl|Terpa)?\s*Lahir\s*[:\.]?\s*([A-Z\s\,\-\/0-9]+?)(?=\s+(?:Jenis|Gol|Alamat|Agama|Status)|$)', text_clean, re.IGNORECASE)
+    nama_match = re.search(r'Nama\s*(?:Lengkap)?\s*[\:\.\)\-]*\s*([a-zA-Z\s\.\']+?)\s+(?:Tempat|Tgl|Lahir|Alamat|Jenis|Gol)', text_clean, re.IGNORECASE)
+    if nama_match: data["NAMA"] = nama_match.group(1).strip().upper()
+        
+    # 3. TTL
+    ttl_match = re.search(r'(?:Tempat|Tgl|Lahir)\s*[\:\.\-\)]*\s*([a-zA-Z0-9\s\,\-\/]+?)\s+(?:Jenis|Jens|Gol|Alamat|Agama)', text_clean, re.IGNORECASE)
     if ttl_match:
-        data["Tempat/Tgl Lahir"] = ttl_match.group(1).strip()
-
+        val = re.sub(r'^(?:Lahir|TglLahir)\s*', '', ttl_match.group(1).strip(), flags=re.IGNORECASE)
+        data["Tempat/Tgl Lahir"] = val.upper()
+        
     # 4. Jenis Kelamin
-    if re.search(r'LAKI|LAK[-_]LAK', text_clean, re.IGNORECASE):
-        data["Jenis Kelamin"] = "LAKI-LAKI"
-    elif re.search(r'PEREMPUAN|PERENPUAN', text_clean, re.IGNORECASE):
-        data["Jenis Kelamin"] = "PEREMPUAN"
-
+    if re.search(r'LAKI|LAK[-_]LAK', text_clean, re.IGNORECASE): data["Jenis Kelamin"] = "LAKI-LAKI"
+    elif re.search(r'PEREMPUAN|PERENPUAN', text_clean, re.IGNORECASE): data["Jenis Kelamin"] = "PEREMPUAN"
+    
     # 5. Alamat
-    alamat_match = re.search(r'Alamat\s*[:\.]?\s*([A-Z0-9\s\,\-\/]+?)(?=\s+(?:RT|RW|Desa|Kecamatan|Agama|Status|Pekerjaan)|$)', text_clean, re.IGNORECASE)
-    if alamat_match:
-        data["Alamat"] = alamat_match.group(1).strip()
-
+    alamat_match = re.search(r'(?:Alamat)\s*[\:\.\-\)]*\s*([a-zA-Z0-9\s\,\-\/\.\?\€]+?)\s+(?:RT|RW|RTRW|RHRW|BTRW|Kel|Desa|Kecamatan|Agama)', text_clean, re.IGNORECASE)
+    if alamat_match: data["Alamat"] = alamat_match.group(1).strip().upper()
+        
     # 6. Agama
     for agama in ["ISLAM", "KRISTEN", "KATOLIK", "HINDU", "BUDHA", "KONGHUCU"]:
         if agama in text_clean.upper():
             data["Agama"] = agama
             break
-
+            
     # 7. Status Perkawinan
-    for status in ["KAWIN", "BELUM KAWIN", "CERAI"]:
+    for status in ["BELUM KAWIN", "KAWIN", "CERAI MATI", "CERAI HIDUP"]:
         if status in text_clean.upper():
             data["Status Perkawinan"] = status
             break
-
+            
     # 8. Pekerjaan
     pek_match = re.search(r'Pekerjaan\s*[:\.]?\s*([A-Z\s]+?)(?=\s+(?:Kewarganegaraan|Berlaku|Gol)|$)', text_clean, re.IGNORECASE)
-    if pek_match:
-        data["Pekerjaan"] = pek_match.group(1).strip()
-
+    if pek_match: data["Pekerjaan"] = pek_match.group(1).strip().upper()
+        
     # 9. Kewarganegaraan
-    if "WNI" in text_clean.upper():
-        data["Kewarganegaraan"] = "WNI"
-    elif "WNA" in text_clean.upper():
-        data["Kewarganegaraan"] = "WNA"
-
+    if "WNI" in text_clean.upper(): data["Kewarganegaraan"] = "WNI"
+    elif "WNA" in text_clean.upper(): data["Kewarganegaraan"] = "WNA"
+        
     # 10. Berlaku Hingga
-    if "SEUMUR HIDUP" in text_clean.upper():
-        data["Berlaku Hingga"] = "SEUMUR HIDUP"
+    if "SEUMUR HIDUP" in text_clean.upper(): data["Berlaku Hingga"] = "SEUMUR HIDUP"
     else:
         berlaku_match = re.search(r'Berlaku\s*Hingga\s*[:\.]?\s*([A-Z0-9\-]+)', text_clean, re.IGNORECASE)
-        if berlaku_match:
-            data["Berlaku Hingga"] = berlaku_match.group(1).strip()
-
+        if berlaku_match: data["Berlaku Hingga"] = berlaku_match.group(1).strip().upper()
+        
     return data
 
 # Komponen Upload Banyak File
@@ -125,11 +115,14 @@ if uploaded_files:
                 image.save(image_bytes, format='JPEG')
                 image_bytes = image_bytes.getvalue()
                 
+                # Ekstrak teks OCR
                 hasil = reader.readtext(image_bytes, detail=0)
                 teks_gabungan = " ".join(hasil)
                 
+                # Parsing teks ke format kolom KTP
                 parsed_data = parse_ktp_text(teks_gabungan)
                 
+                # Masukkan nomor urut
                 row_data = {"No": i + 1}
                 row_data.update(parsed_data)
                 data_hasil.append(row_data)
@@ -144,17 +137,22 @@ if uploaded_files:
             
             progress_bar.progress((i + 1) / total_file)
         
-        status_text.text("Semua KTP berhasil diproses!")
-        st.success("Selesai!")
+        status_text.text("Semua KTP berhasil diproses dan diformat!")
+        st.success("Proses selesai!")
         
+        # Buat DataFrame sesuai kolom format KTP
         df_hasil = pd.DataFrame(data_hasil)
+        
+        # Tampilkan pratinjau tabel di web
         st.dataframe(df_hasil)
         
+        # Ekspor ke file Excel
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_hasil.to_excel(writer, index=False, sheet_name='Format KTP')
         excel_data = output.getvalue()
         
+        # Tombol Download
         st.download_button(
             label="Unduh Excel Sesuai Format KTP (.xlsx)",
             data=excel_data,
