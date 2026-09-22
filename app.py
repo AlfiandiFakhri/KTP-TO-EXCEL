@@ -7,7 +7,7 @@ import re
 import difflib
 
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
-st.write("Ekstraksi KTP Cerdas: Dilengkapi Pemindaian Multi-Sudut Agresif untuk Foto Vertikal/Miring.")
+st.write("Ekstraksi KTP Cerdas & Otomatis.")
 
 @st.cache_resource
 def load_reader():
@@ -20,8 +20,7 @@ DAFTAR_KOTA_INDO = [
     "CIREBON", "JAKARTA", "BANDUNG", "SEMARANG", "SURABAYA", "YOGYAKARTA", 
     "MEDAN", "PALEMBANG", "MAKASSAR", "DENPASAR", "MALANG", "BOGOR", "BEKASI", 
     "DEPOK", "TANGERANG", "SURAKARTA", "TASIKMALAYA", "GARUT", "INDRAMAYU", 
-    "MAJALENGKA", "KUNINGAN", "BREBES", "TEGAL", "PEKALONGAN", "BANYUMAS", 
-    "PURWOKERTO", "CILACAP", "MAGELANG", "KEDIRI", "MADIUN", "PASURUAN"
+    "MAJALENGKA", "KUNINGAN", "BREBES", "TEGAL", "PEKALONGAN", "BANYUMAS"
 ]
 
 def koreksi_nama_kota(kota_typo):
@@ -51,7 +50,7 @@ def parse_ktp_text(text):
     text_clean = re.sub(r'(?i)(Agama|Agare)', ' _AGAMA_ ', text_clean)
     text_clean = re.sub(r'(?i)(Status.*?Perkavnan|Status.*?Kawin|Status.*?Perkawinan)', ' _STATUS_ ', text_clean)
     text_clean = re.sub(r'(?i)(Pekerjaan)', ' _PEKERJAAN_ ', text_clean)
-    text_clean = re.sub(r'(?i)(Kewvarganegaraan|Kewaranegaraan|Kewarganegaraan)', ' _KWN_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Kewvarganegaraan|Kewaranegaraan)', ' _KWN_ ', text_clean)
     text_clean = re.sub(r'(?i)(Berlaku.*?Hingga|Benaku.*?Hingga)', ' _BERLAKU_ ', text_clean)
 
     text_clean = re.sub(r'\s*:\s*', ' ', text_clean)
@@ -132,7 +131,7 @@ def parse_ktp_text(text):
     if "WNI" in kwn_raw or "WN" in kwn_raw: data["Kewarganegaraan"] = "WNI"
     elif "WNA" in kwn_raw: data["Kewarganegaraan"] = "WNA"
         
-    berlaku_raw = extract_between('_BERLAKU_', ['_SEUMUR_', 'ON'], text_clean)
+    berlaku_raw = extract_between('_BERLaku_', ['_SEUMUR_', 'ON'], text_clean)
     if "SEUMUR HIDUP" in text_clean.upper() or "SEUMUR" in berlaku_raw: data["Berlaku Hingga"] = "SEUMUR HIDUP"
     else: data["Berlaku Hingga"] = berlaku_raw
 
@@ -156,36 +155,29 @@ if uploaded_files:
                 image = Image.open(uploaded_file)
                 image = ImageOps.exif_transpose(image)
                 
-                # Pemindaian Multi-Sudut Agresif (0, 90, 180, 270 derajat)
-                # Mencari sudut mana yang menghasilkan kata kunci NIK paling valid
                 sudut_rotasi = [0, 90, 180, 270]
                 teks_terbaik = ""
                 max_score = -1
                 
                 for angle in sudut_rotasi:
-                # Menggunakan metode rotate PIL (expand=True agar ukuran menyesuaikan)
                     img_rotated = image.rotate(angle, expand=True) if angle != 0 else image
-                    
                     image_bytes = io.BytesIO()
                     img_rotated.save(image_bytes, format='JPEG')
                     
                     hasil = reader.readtext(image_bytes.getvalue(), detail=0)
                     teks_gabungan = " ".join(hasil)
                     
-                    # Beri skor berdasarkan seberapa banyak kata kunci KTP yang ditemukan
                     score = 0
                     if re.search(r'(?i)NIK', teks_gabungan): score += 3
                     if re.search(r'(?i)PROVINSI|KOTA', teks_gabungan): score += 2
                     if re.search(r'(?i)ALAMAT|AGAMA', teks_gabungan): score += 2
-                    score += len(hasil) # Semakin banyak teks terbaca, semakin tinggi skornya
+                    score += len(hasil)
                     
                     if score > max_score:
                         max_score = score
                         teks_terbaik = teks_gabungan
                 
-                # Parsing teks terbaik hasil rotasi paling akurat
                 parsed_data = parse_ktp_text(teks_terbaik)
-                
                 row_data = {"No": i + 1}
                 row_data.update(parsed_data)
                 data_hasil.append(row_data)
