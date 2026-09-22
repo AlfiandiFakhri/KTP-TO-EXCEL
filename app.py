@@ -6,7 +6,7 @@ import io
 import re
 
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
-st.write("Unggah banyak foto KTP sekaligus, ekstrak, dan unduh dalam format tabel KTP yang rapi!")
+st.write("Ekstraksi presisi tinggi: Memotong judul kolom dan memperbaiki salah baca OCR secara otomatis.")
 
 @st.cache_resource
 def load_reader():
@@ -22,71 +22,106 @@ def parse_ktp_text(text):
         "Kewarganegaraan": "", "Berlaku Hingga": ""
     }
     
-    # 0. Normalisasi Teks KTP/KIA untuk OCR yang kotor (Pembersih Teks)
+    # 1. Bersihkan karakter aneh yang sering dibaca salah oleh OCR
     text_clean = text.replace("{", "3").replace("}", "").replace("|", "I").replace("?", "7").replace("€", "E")
-    
-    # Memperbaiki salah eja (typo) umum dari OCR KTP
-    text_clean = re.sub(r'(?i)(Nara|Narna|Nam)\b', 'Nama', text_clean)
-    text_clean = re.sub(r'(?i)(Lergka)', 'Lengkap', text_clean)
-    text_clean = re.sub(r'(?i)(Terpa|Tempal|Tenpat|TenpatTgi)', 'Tempat', text_clean)
-    text_clean = re.sub(r'(?i)(Tcl)', 'Tgl', text_clean)
-    text_clean = re.sub(r'(?i)(Lahis)', 'Lahir', text_clean)
-    text_clean = re.sub(r'(?i)(Aamat|Nlamal|Nemal)', 'Alamat', text_clean)
     text_clean = re.sub(r'\s+', ' ', text_clean)
     
-    # 1. NIK
-    nik_match = re.search(r'(?:NIK|M|K)\s*[:\.]?\s*([0-9\s]{16,20})', text_clean, re.IGNORECASE)
-    if nik_match:
-        nik_val = re.sub(r'\D', '', nik_match.group(1))
-        if len(nik_val) >= 16: data["NIK"] = nik_val[:16]
-    if not data["NIK"]:
+    # 2. STANDARISASI TAG (Mengubah semua variasi typo/judul menjadi satu TAG UTAMA pembatas)
+    text_clean = re.sub(r'(?i)\b(NIK)\b', ' _NIK_ ', text_clean)
+    text_clean = re.sub(r'(?i)\b(Nara|Narna|Nam|Nama)\b\s*(?:Lengkap)?', ' _NAMA_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Terpa.*?Lahir|Tenpat.*?Lahir|Tempat.*?Lahir|Tgl.*?Lahir|Tcl.*?Lahis)', ' _TTL_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Jenis.*?Kelamin|Jenis.*?kel|Jens.*?Keanin)', ' _JK_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Gd Darah|Gol.*?Darah|Golongan.*?Darah)', ' _GOL_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Aamat|Nlamal|Nemal|Alamat)', ' _ALAMAT_ ', text_clean)
+    text_clean = re.sub(r'(?i)(RHRW|RTRW|RT.*?RW|BTRW)', ' _RTRW_ ', text_clean)
+    text_clean = re.sub(r'(?i)(KeDesa|Kel.*?Desa|Desa.*?Kelurahan|Desa)', ' _KELD_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Kecamatan|Kec)', ' _KEC_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Agama|Agare)', ' _AGAMA_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Status.*?Perkavnan|Status.*?Kawin|Status.*?Perkawinan)', ' _STATUS_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Pekerjaan)', ' _PEKERJAAN_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Kewvarganegaraan|Kewaranegaraan|Kewarganegaraan)', ' _KWN_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Berlaku.*?Hingga|Benaku.*?Hingga)', ' _BERLAKU_ ', text_clean)
+
+    # 3. Menghapus sisa titik dua (:) dari OCR agar teks benar-benar bersih
+    text_clean = re.sub(r'\s*:\s*', ' ', text_clean)
+    text_clean = re.sub(r'\s+', ' ', text_clean)
+    
+    # Fungsi pintar untuk memotong dan hanya mengambil ISI teks di antara DUA TAG judul
+    def extract_between(start_tag, next_tags, text):
+        pattern = start_tag + r'\s*(.*?)\s*(?:' + '|'.join(next_tags) + '|$)'
+        match = re.search(pattern, text)
+        if match:
+            res = match.group(1).strip()
+            # Bersihkan sisa titik/strip di awal kata
+            res = re.sub(r'^[\:\.\-\;\_]+', '', res).strip()
+            return res.upper()
+        return ""
+
+    # -- PROSES EKSTRAKSI KE DALAM KOLOM --
+    
+    # NIK
+    nik_raw = extract_between('_NIK_', ['_NAMA_', '_TTL_'], text_clean)
+    nik_val = re.sub(r'\D', '', nik_raw)
+    if len(nik_val) >= 16: data["NIK"] = nik_val[:16]
+    else:
         all_nums = re.findall(r'\b[0-9]{16}\b', text_clean)
         if all_nums: data["NIK"] = all_nums[0]
         
-    # 2. NAMA
-    nama_match = re.search(r'Nama\s*(?:Lengkap)?\s*[\:\.\)\-]*\s*([a-zA-Z\s\.\']+?)\s+(?:Tempat|Tgl|Lahir|Alamat|Jenis|Gol)', text_clean, re.IGNORECASE)
-    if nama_match: data["NAMA"] = nama_match.group(1).strip().upper()
-        
-    # 3. TTL
-    ttl_match = re.search(r'(?:Tempat|Tgl|Lahir)\s*[\:\.\-\)]*\s*([a-zA-Z0-9\s\,\-\/]+?)\s+(?:Jenis|Jens|Gol|Alamat|Agama)', text_clean, re.IGNORECASE)
-    if ttl_match:
-        val = re.sub(r'^(?:Lahir|TglLahir)\s*', '', ttl_match.group(1).strip(), flags=re.IGNORECASE)
-        data["Tempat/Tgl Lahir"] = val.upper()
-        
-    # 4. Jenis Kelamin
-    if re.search(r'LAKI|LAK[-_]LAK', text_clean, re.IGNORECASE): data["Jenis Kelamin"] = "LAKI-LAKI"
-    elif re.search(r'PEREMPUAN|PERENPUAN', text_clean, re.IGNORECASE): data["Jenis Kelamin"] = "PEREMPUAN"
+    # NAMA (Hanya mengambil murni teks setelah tag nama dan sebelum tag TTL)
+    data["NAMA"] = extract_between('_NAMA_', ['_TTL_', '_JK_', '_ALAMAT_'], text_clean)
     
-    # 5. Alamat
-    alamat_match = re.search(r'(?:Alamat)\s*[\:\.\-\)]*\s*([a-zA-Z0-9\s\,\-\/\.\?\€]+?)\s+(?:RT|RW|RTRW|RHRW|BTRW|Kel|Desa|Kecamatan|Agama)', text_clean, re.IGNORECASE)
-    if alamat_match: data["Alamat"] = alamat_match.group(1).strip().upper()
+    # TEMPAT/TGL LAHIR
+    data["Tempat/Tgl Lahir"] = extract_between('_TTL_', ['_JK_', '_GOL_', '_ALAMAT_'], text_clean)
+    
+    # JENIS KELAMIN (Dengan deteksi Typo parah OCR)
+    jk_raw = extract_between('_JK_', ['_GOL_', '_ALAMAT_', '_RTRW_'], text_clean)
+    if re.search(r'LAK|EAK|AKI', jk_raw): data["Jenis Kelamin"] = "LAKI-LAKI"
+    elif re.search(r'PER|PUAN|EMP', jk_raw): data["Jenis Kelamin"] = "PEREMPUAN"
         
-    # 6. Agama
-    for agama in ["ISLAM", "KRISTEN", "KATOLIK", "HINDU", "BUDHA", "KONGHUCU"]:
-        if agama in text_clean.upper():
-            data["Agama"] = agama
+    # ALAMAT (Menggabungkan Jalan, RT/RW, Kelurahan, Kecamatan secara otomatis)
+    alamat_jalan = extract_between('_ALAMAT_', ['_RTRW_', '_KELD_', '_KEC_', '_AGAMA_'], text_clean)
+    rt_rw = extract_between('_RTRW_', ['_KELD_', '_KEC_', '_AGAMA_'], text_clean)
+    kel_desa = extract_between('_KELD_', ['_KEC_', '_AGAMA_'], text_clean)
+    kecamatan = extract_between('_KEC_', ['_AGAMA_', '_STATUS_'], text_clean)
+    
+    alamat_lengkap = alamat_jalan
+    if rt_rw: alamat_lengkap += f" RT/RW {rt_rw}"
+    if kel_desa: alamat_lengkap += f" KEL. {kel_desa}"
+    if kecamatan: alamat_lengkap += f" KEC. {kecamatan}"
+    data["Alamat"] = alamat_lengkap.strip()
+    
+    # AGAMA
+    agama_raw = extract_between('_AGAMA_', ['_STATUS_', '_PEKERJAAN_'], text_clean)
+    for agm in ["ISLAM", "KRISTEN", "KATOLIK", "HINDU", "BUDHA", "KONGHUCU"]:
+        if agm in agama_raw:
+            data["Agama"] = agm
             break
             
-    # 7. Status Perkawinan
-    for status in ["BELUM KAWIN", "KAWIN", "CERAI MATI", "CERAI HIDUP"]:
-        if status in text_clean.upper():
-            data["Status Perkawinan"] = status
+    # STATUS PERKAWINAN
+    status_raw = extract_between('_STATUS_', ['_PEKERJAAN_', '_KWN_', '_BERLAKU_'], text_clean)
+    for stts in ["BELUM KAWIN", "KAWIN", "CERAI MATI", "CERAI HIDUP"]:
+        if stts in status_raw:
+            data["Status Perkawinan"] = stts
             break
             
-    # 8. Pekerjaan
-    pek_match = re.search(r'Pekerjaan\s*[:\.]?\s*([A-Z\s]+?)(?=\s+(?:Kewarganegaraan|Berlaku|Gol)|$)', text_clean, re.IGNORECASE)
-    if pek_match: data["Pekerjaan"] = pek_match.group(1).strip().upper()
+    # PEKERJAAN
+    pekerjaan_raw = extract_between('_PEKERJAAN_', ['_KWN_', '_BERLAKU_', 'KOTA'], text_clean)
+    # Menghapus tanggal acak/kota yang sering terselip di area pekerjaan OCR
+    pekerjaan_raw = re.sub(r'[0-9]{2}\-[0-9]{2}\-[0-9]{4}', '', pekerjaan_raw).strip()
+    data["Pekerjaan"] = re.sub(r'KOTA\s+[A-Z]+', '', pekerjaan_raw).strip()
+
+    # KEWARGANEGARAAN
+    kwn_raw = extract_between('_KWN_', ['_BERLAKU_'], text_clean)
+    if "WNI" in kwn_raw or "WN" in kwn_raw: data["Kewarganegaraan"] = "WNI"
+    elif "WNA" in kwn_raw: data["Kewarganegaraan"] = "WNA"
         
-    # 9. Kewarganegaraan
-    if "WNI" in text_clean.upper(): data["Kewarganegaraan"] = "WNI"
-    elif "WNA" in text_clean.upper(): data["Kewarganegaraan"] = "WNA"
-        
-    # 10. Berlaku Hingga
-    if "SEUMUR HIDUP" in text_clean.upper(): data["Berlaku Hingga"] = "SEUMUR HIDUP"
+    # BERLAKU HINGGA
+    berlaku_raw = extract_between('_BERLAKU_', ['_SEUMUR_', 'ON'], text_clean)
+    if "SEUMUR HIDUP" in text_clean.upper() or "SEUMUR" in berlaku_raw:
+        data["Berlaku Hingga"] = "SEUMUR HIDUP"
     else:
-        berlaku_match = re.search(r'Berlaku\s*Hingga\s*[:\.]?\s*([A-Z0-9\-]+)', text_clean, re.IGNORECASE)
-        if berlaku_match: data["Berlaku Hingga"] = berlaku_match.group(1).strip().upper()
-        
+        data["Berlaku Hingga"] = berlaku_raw
+
     return data
 
 # Komponen Upload Banyak File
