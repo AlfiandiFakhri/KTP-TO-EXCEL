@@ -6,7 +6,7 @@ import io
 import re
 
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
-st.write("Ekstraksi presisi tinggi: Memotong judul kolom dan memperbaiki salah baca OCR secara otomatis.")
+st.write("Ekstraksi presisi tinggi: Memotong judul kolom dan membersihkan stempel KOTA/Tanggal di bawah foto.")
 
 @st.cache_resource
 def load_reader():
@@ -22,11 +22,11 @@ def parse_ktp_text(text):
         "Kewarganegaraan": "", "Berlaku Hingga": ""
     }
     
-    # 1. Bersihkan karakter aneh yang sering dibaca salah oleh OCR
+    # 1. Bersihkan karakter aneh OCR
     text_clean = text.replace("{", "3").replace("}", "").replace("|", "I").replace("?", "7").replace("€", "E")
     text_clean = re.sub(r'\s+', ' ', text_clean)
     
-    # 2. STANDARISASI TAG (Mengubah semua variasi typo/judul menjadi satu TAG UTAMA pembatas)
+    # 2. STANDARISASI TAG (Mengubah variasi typo menjadi satu TAG pembatas)
     text_clean = re.sub(r'(?i)\b(NIK)\b', ' _NIK_ ', text_clean)
     text_clean = re.sub(r'(?i)\b(Nara|Narna|Nam|Nama)\b\s*(?:Lengkap)?', ' _NAMA_ ', text_clean)
     text_clean = re.sub(r'(?i)(Terpa.*?Lahir|Tenpat.*?Lahir|Tempat.*?Lahir|Tgl.*?Lahir|Tcl.*?Lahis)', ' _TTL_ ', text_clean)
@@ -42,17 +42,14 @@ def parse_ktp_text(text):
     text_clean = re.sub(r'(?i)(Kewvarganegaraan|Kewaranegaraan|Kewarganegaraan)', ' _KWN_ ', text_clean)
     text_clean = re.sub(r'(?i)(Berlaku.*?Hingga|Benaku.*?Hingga)', ' _BERLAKU_ ', text_clean)
 
-    # 3. Menghapus sisa titik dua (:) dari OCR agar teks benar-benar bersih
     text_clean = re.sub(r'\s*:\s*', ' ', text_clean)
     text_clean = re.sub(r'\s+', ' ', text_clean)
     
-    # Fungsi pintar untuk memotong dan hanya mengambil ISI teks di antara DUA TAG judul
     def extract_between(start_tag, next_tags, text):
         pattern = start_tag + r'\s*(.*?)\s*(?:' + '|'.join(next_tags) + '|$)'
         match = re.search(pattern, text)
         if match:
             res = match.group(1).strip()
-            # Bersihkan sisa titik/strip di awal kata
             res = re.sub(r'^[\:\.\-\;\_]+', '', res).strip()
             return res.upper()
         return ""
@@ -67,18 +64,18 @@ def parse_ktp_text(text):
         all_nums = re.findall(r'\b[0-9]{16}\b', text_clean)
         if all_nums: data["NIK"] = all_nums[0]
         
-    # NAMA (Hanya mengambil murni teks setelah tag nama dan sebelum tag TTL)
+    # NAMA
     data["NAMA"] = extract_between('_NAMA_', ['_TTL_', '_JK_', '_ALAMAT_'], text_clean)
     
     # TEMPAT/TGL LAHIR
     data["Tempat/Tgl Lahir"] = extract_between('_TTL_', ['_JK_', '_GOL_', '_ALAMAT_'], text_clean)
     
-    # JENIS KELAMIN (Dengan deteksi Typo parah OCR)
+    # JENIS KELAMIN
     jk_raw = extract_between('_JK_', ['_GOL_', '_ALAMAT_', '_RTRW_'], text_clean)
     if re.search(r'LAK|EAK|AKI', jk_raw): data["Jenis Kelamin"] = "LAKI-LAKI"
     elif re.search(r'PER|PUAN|EMP', jk_raw): data["Jenis Kelamin"] = "PEREMPUAN"
         
-    # ALAMAT (Menggabungkan Jalan, RT/RW, Kelurahan, Kecamatan secara otomatis)
+    # ALAMAT
     alamat_jalan = extract_between('_ALAMAT_', ['_RTRW_', '_KELD_', '_KEC_', '_AGAMA_'], text_clean)
     rt_rw = extract_between('_RTRW_', ['_KELD_', '_KEC_', '_AGAMA_'], text_clean)
     kel_desa = extract_between('_KELD_', ['_KEC_', '_AGAMA_'], text_clean)
@@ -104,11 +101,21 @@ def parse_ktp_text(text):
             data["Status Perkawinan"] = stts
             break
             
-    # PEKERJAAN
-    pekerjaan_raw = extract_between('_PEKERJAAN_', ['_KWN_', '_BERLAKU_', 'KOTA'], text_clean)
-    # Menghapus tanggal acak/kota yang sering terselip di area pekerjaan OCR
-    pekerjaan_raw = re.sub(r'[0-9]{2}\-[0-9]{2}\-[0-9]{4}', '', pekerjaan_raw).strip()
-    data["Pekerjaan"] = re.sub(r'KOTA\s+[A-Z]+', '', pekerjaan_raw).strip()
+    # PEKERJAAN (Dilengkapi Pemotong Bagian Bawah Foto)
+    pekerjaan_raw = extract_between('_PEKERJAAN_', ['_KWN_', '_BERLAKU_'], text_clean)
+    
+    # 1. Potong jika ada pola tanggal di bawah foto (contoh: 17-10-2022)
+    date_match = re.search(r'\d{2}[\-\/\.]\d{2}[\-\/\.]\d{4}', pekerjaan_raw)
+    if date_match:
+        pekerjaan_raw = pekerjaan_raw[:date_match.start()]
+        
+    # 2. Potong jika ada teks KOTA/KABUPATEN di bawah foto
+    loc_match = re.search(r'(KOTA|KABUPATEN|KAB\.|KAB\s|PROV|GUBERNUR|CAMAT)', pekerjaan_raw)
+    if loc_match:
+        pekerjaan_raw = pekerjaan_raw[:loc_match.start()]
+        
+    # Hapus sisa tanda baca aneh di ujung teks (jika ada)
+    data["Pekerjaan"] = re.sub(r'[^A-Z\s]+$', '', pekerjaan_raw.strip()).strip()
 
     # KEWARGANEGARAAN
     kwn_raw = extract_between('_KWN_', ['_BERLAKU_'], text_clean)
