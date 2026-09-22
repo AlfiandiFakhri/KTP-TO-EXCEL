@@ -11,8 +11,7 @@ st.write("Ekstraksi KTP Cerdas: Stabil, Ringan, dan Otomatis.")
 
 @st.cache_resource
 def load_reader():
-    # Menggunakan CPU dan menonaktifkan model paragraf yang memakan banyak RAM
-    return easyocr.Reader(['id'], gpu=False, model_storage_directory='/tmp')
+    return easyocr.Reader(['id'], gpu=False)
 
 with st.spinner("Memuat sistem AI pembaca KTP..."):
     reader = load_reader()
