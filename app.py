@@ -7,11 +7,12 @@ import re
 import difflib
 
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
-st.write("Ekstraksi KTP Cerdas & Otomatis.")
+st.write("Ekstraksi KTP Cerdas: Stabil, Ringan, dan Otomatis.")
 
 @st.cache_resource
 def load_reader():
-    return easyocr.Reader(['id', 'en'], gpu=False)
+    # Menggunakan CPU dan menonaktifkan model paragraf yang memakan banyak RAM
+    return easyocr.Reader(['id'], gpu=False, model_storage_directory='/tmp')
 
 with st.spinner("Memuat sistem AI pembaca KTP..."):
     reader = load_reader()
@@ -131,7 +132,7 @@ def parse_ktp_text(text):
     if "WNI" in kwn_raw or "WN" in kwn_raw: data["Kewarganegaraan"] = "WNI"
     elif "WNA" in kwn_raw: data["Kewarganegaraan"] = "WNA"
         
-    berlaku_raw = extract_between('_BERLaku_', ['_SEUMUR_', 'ON'], text_clean)
+    berlaku_raw = extract_between('_BERLAKU_', ['_SEUMUR_', 'ON'], text_clean)
     if "SEUMUR HIDUP" in text_clean.upper() or "SEUMUR" in berlaku_raw: data["Berlaku Hingga"] = "SEUMUR HIDUP"
     else: data["Berlaku Hingga"] = berlaku_raw
 
