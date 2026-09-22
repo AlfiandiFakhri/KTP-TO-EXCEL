@@ -1,5 +1,5 @@
 import streamlit as st
-import easyocr
+import pytesseract
 import pandas as pd
 from PIL import Image, ImageOps
 import io
@@ -7,14 +7,7 @@ import re
 import difflib
 
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
-st.write("Ekstraksi KTP Cerdas: Stabil, Ringan, dan Otomatis.")
-
-@st.cache_resource
-def load_reader():
-    return easyocr.Reader(['id'], gpu=False)
-
-with st.spinner("Memuat sistem AI pembaca KTP..."):
-    reader = load_reader()
+st.write("Ekstraksi KTP Cerdas: Cepat, Ringan, dan Stabil di Cloud.")
 
 DAFTAR_KOTA_INDO = [
     "CIREBON", "JAKARTA", "BANDUNG", "SEMARANG", "SURABAYA", "YOGYAKARTA", 
@@ -161,17 +154,15 @@ if uploaded_files:
                 
                 for angle in sudut_rotasi:
                     img_rotated = image.rotate(angle, expand=True) if angle != 0 else image
-                    image_bytes = io.BytesIO()
-                    img_rotated.save(image_bytes, format='JPEG')
                     
-                    hasil = reader.readtext(image_bytes.getvalue(), detail=0)
-                    teks_gabungan = " ".join(hasil)
+                    # Ekstrak teks menggunakan pytesseract
+                    teks_gabungan = pytesseract.image_to_string(img_rotated, lang='ind')
                     
                     score = 0
                     if re.search(r'(?i)NIK', teks_gabungan): score += 3
                     if re.search(r'(?i)PROVINSI|KOTA', teks_gabungan): score += 2
                     if re.search(r'(?i)ALAMAT|AGAMA', teks_gabungan): score += 2
-                    score += len(hasil)
+                    score += len(teks_gabungan)
                     
                     if score > max_score:
                         max_score = score
