@@ -5,15 +5,10 @@ import io
 import json
 from google import genai
 
-# --- KONFIGURASI API GEMINI (KHUSUS KUNCI AQ. / VERTEX AI) ---
+# --- KONFIGURASI API GEMINI (Mendukung Kunci AQ. Terbaru) ---
 if "GEMINI_API_KEY" in st.secrets:
-    # Mengaktifkan vertexai=True dan Project ID agar kunci AQ. diterima oleh Google Cloud
-    client = genai.Client(
-        vertexai=True,
-        project="799108228030",
-        location="us-central1",
-        api_key=st.secrets["GEMINI_API_KEY"]
-    )
+    # Cukup panggil Client dengan api_key saja secara standar
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 else:
     st.error("API Key Gemini belum disetel di Streamlit Secrets! Tambahkan GEMINI_API_KEY terlebih dahulu.")
 
@@ -21,7 +16,7 @@ else:
 st.title("Aplikasi Ekstraksi KTP Pintar (Powered by Gemini AI)")
 st.write("Ekstraksi NIK & Nama berakurasi tinggi menggunakan kecerdasan buatan multimodal.")
 
-# Menggunakan model gemini-1.5-flash yang stabil dan didukung di Vertex AI
+# Menggunakan model gemini-1.5-flash yang stabil
 MODEL_NAME = "gemini-1.5-flash"
 
 def ekstrak_ktp_dengan_gemini(image):
