@@ -41,20 +41,20 @@ def parse_ktp_text(text):
     text_clean = text.replace("{", "3").replace("}", "").replace("|", "I").replace("?", "7").replace("€", "E")
     text_clean = re.sub(r'\s+', ' ', text_clean)
     
-    # 2. Standarisasi TAG Pembatas
+    # 2. Standarisasi TAG Pembatas (Toleransi Typo Label OCR Diperluas)
     text_clean = re.sub(r'(?i)\b(NIK)\b', ' _NIK_ ', text_clean)
     text_clean = re.sub(r'(?i)\b(Nara|Narna|Nam|Nama)\b\s*(?:Lengkap)?', ' _NAMA_ ', text_clean)
     text_clean = re.sub(r'(?i)(Terpa.*?Lahir|Tenpat.*?Lahir|Tempat.*?Lahir|Tompat.*?Lahir|Tornpat.*?Lahir|Tgl.*?Lahir|Tcl.*?Lahis|Tempat|Tompat|Tornpat)', ' _TTL_ ', text_clean)
     text_clean = re.sub(r'(?i)(Jenis.*?Kelamin|Jenis.*?kel|Jens.*?Keanin)', ' _JK_ ', text_clean)
     text_clean = re.sub(r'(?i)(Gd Darah|Gol.*?Darah|Golongan.*?Darah)', ' _GOL_ ', text_clean)
-    text_clean = re.sub(r'(?i)(Aamat|Nlamal|Nemal|Alamat)', ' _ALAMAT_ ', text_clean)
-    text_clean = re.sub(r'(?i)(RHRW|RTRW|RT.*?RW|BTRW)', ' _RTRW_ ', text_clean)
-    text_clean = re.sub(r'(?i)(KeDesa|Kel.*?Desa|Desa.*?Kelurahan|Desa)', ' _KELD_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Alamat|Aamat|Nlamal|Nemal|Alamet)', ' _ALAMAT_ ', text_clean)
+    text_clean = re.sub(r'(?i)(RHRW|RTRW|RT.*?RW|BTRW|RT\s*I\s*RW)', ' _RTRW_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Kelurahan|Desa|Kel.*?Desa|KeDesa|Kel|Des)', ' _KELD_ ', text_clean)
     text_clean = re.sub(r'(?i)(Kecamatan|Kec)', ' _KEC_ ', text_clean)
-    text_clean = re.sub(r'(?i)(Agama|Agare)', ' _AGAMA_ ', text_clean)
-    text_clean = re.sub(r'(?i)(Status.*?Perkavnan|Status.*?Kawin|Status.*?Perkawinan)', ' _STATUS_ ', text_clean)
-    text_clean = re.sub(r'(?i)(Pekerjaan)', ' _PEKERJAAN_ ', text_clean)
-    text_clean = re.sub(r'(?i)(Kewvarganegaraan|Kewaranegaraan|Kewarganegaraan)', ' _KWN_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Agama|Agare|Agarna)', ' _AGAMA_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Status.*?Perkawinan|Status.*?Perkavnan|Status.*?Kawin|Status)', ' _STATUS_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Pekerjaan|Pekerjaari|Pekerja.*?n)', ' _PEKERJAAN_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Kewvarganegaraan|Kewaranegaraan|Kewarganegaraan|Kewarganegara.*?n|Kewarga.*?n)', ' _KWN_ ', text_clean)
     text_clean = re.sub(r'(?i)(Berlaku.*?Hingga|Benaku.*?Hingga)', ' _BERLAKU_ ', text_clean)
 
     text_clean = re.sub(r'\s*:\s*', ' ', text_clean)
@@ -73,11 +73,9 @@ def parse_ktp_text(text):
     nik_val = re.sub(r'\D', '', nik_raw)
     data["NIK"] = nik_val[:16] if len(nik_val) >= 16 else (re.findall(r'\b[0-9]{16}\b', text_clean)[0] if re.findall(r'\b[0-9]{16}\b', text_clean) else "")
     
-    # Ekstraksi dan Pembersihan NAMA
     data["NAMA"] = extract_between('_NAMA_', ['_TTL_', '_JK_', '_ALAMAT_'], text_clean)
     data["NAMA"] = re.sub(r'(?i)\b(TOMPAT|TORNPAT|TEMPAT|TGL|LAHIR)\b.*$', '', data["NAMA"]).strip()
 
-    # Kamus Typo Khusus NAMA
     kamus_typo_nama = {
         r'\bOWI\b': 'DWI',
         r'\bUTAIYANTI\b': 'UTAMIYANTI'
@@ -105,7 +103,6 @@ def parse_ktp_text(text):
     # -- KAMUS AUTO-KOREKSI ALAMAT PINTAR --
     alamat_jalan = extract_between('_ALAMAT_', ['_RTRW_', '_KELD_', '_KEC_', '_AGAMA_'], text_clean)
     
-    # Kamus pengganti otomatis
     kamus_alamat = {
         r'\b(?:L|J|JLN)\b\s*': 'JL. ',
         r'\b(?:UUNG|UJUNS)\b': 'UJUNG',
@@ -113,7 +110,8 @@ def parse_ktp_text(text):
         r'\b(?:GGTANA|GG\s*TANA|66\s*TANAH|CANG)\b': 'GG. TANAH ',
         r'\b(?:EARU|BARU7|BARU\?)\b': 'BARU',
         r'\b(?:NO|N0|NOMOR)\b\s*[\?\7]': 'NO. 2', 
-        r'\b(?:NO|N0|NOMOR)\b\s*': 'NO. '
+        r'\b(?:NO|N0|NOMOR)\b\s*': 'NO. ',
+        r'\bKESAVBI\b': 'KESAMBI'
     }
     
     for pola, perbaikan in kamus_alamat.items():
@@ -128,10 +126,12 @@ def parse_ktp_text(text):
     # KELURAHAN
     kel_desa_raw = extract_between('_KELD_', ['_KEC_', '_AGAMA_'], text_clean)
     kel_desa_final = re.sub(r'[^A-Z\s\-]', '', kel_desa_raw).strip()
+    kel_desa_final = kel_desa_final.replace("KESAVBI", "KESAMBI")
     
     # KECAMATAN
     kec_raw = extract_between('_KEC_', ['_AGAMA_', '_STATUS_'], text_clean)
     kec_final = re.sub(r'[^A-Z\s\-]', '', kec_raw).strip()
+    kec_final = kec_final.replace("KESAVBI", "KESAMBI")
     
     # PENGGABUNGAN FORMAT FINAL
     alamat_lengkap = alamat_jalan
@@ -140,14 +140,23 @@ def parse_ktp_text(text):
     if kec_final: alamat_lengkap += f" KECAMATAN {kec_final}"
     data["Alamat"] = alamat_lengkap.strip()
     
-    # -- AGAMA & STATUS --
-    agama_raw = extract_between('_AGAMA_', ['_STATUS_', '_PEKERJAAN_'], text_clean)
-    for agm in ["ISLAM", "KRISTEN", "KATOLIK", "HINDU", "BUDHA", "KONGHUCU"]:
-        if agm in agama_raw: data["Agama"] = agm; break
+    # -- AGAMA (Diperbarui) --
+    agama_raw = extract_between('_AGAMA_', ['_STATUS_', '_PEKERJAAN_', '_KWN_'], text_clean)
+    if re.search(r'ISLAM|1SLAM', agama_raw): data["Agama"] = "ISLAM"
+    elif re.search(r'KRISTEN', agama_raw): data["Agama"] = "KRISTEN"
+    elif re.search(r'KATOLIK', agama_raw): data["Agama"] = "KATOLIK"
+    elif re.search(r'HINDU', agama_raw): data["Agama"] = "HINDU"
+    elif re.search(r'BUDHA|BUDDHA', agama_raw): data["Agama"] = "BUDHA"
+    elif re.search(r'KONGHUCU', agama_raw): data["Agama"] = "KONGHUCU"
+    else: data["Agama"] = agama_raw
             
+    # -- STATUS PERKAWINAN (Diperbarui) --
     status_raw = extract_between('_STATUS_', ['_PEKERJAAN_', '_KWN_', '_BERLAKU_'], text_clean)
-    for stts in ["BELUM KAWIN", "KAWIN", "CERAI MATI", "CERAI HIDUP"]:
-        if stts in status_raw: data["Status Perkawinan"] = stts; break
+    if re.search(r'BELUM\s*KAW|BELUM', status_raw): data["Status Perkawinan"] = "BELUM KAWIN"
+    elif re.search(r'CERAI\s*MATI', status_raw): data["Status Perkawinan"] = "CERAI MATI"
+    elif re.search(r'CERAI\s*HIDUP', status_raw): data["Status Perkawinan"] = "CERAI HIDUP"
+    elif re.search(r'KAW|KAV|KAW1N', status_raw): data["Status Perkawinan"] = "KAWIN"
+    else: data["Status Perkawinan"] = status_raw
             
     # -- PEKERJAAN --
     pekerjaan_raw = extract_between('_PEKERJAAN_', ['_KWN_', '_BERLAKU_'], text_clean)
@@ -159,6 +168,7 @@ def parse_ktp_text(text):
     kwn_raw = extract_between('_KWN_', ['_BERLAKU_'], text_clean)
     if "WNI" in kwn_raw or "WN" in kwn_raw: data["Kewarganegaraan"] = "WNI"
     elif "WNA" in kwn_raw: data["Kewarganegaraan"] = "WNA"
+    else: data["Kewarganegaraan"] = kwn_raw
         
     berlaku_raw = extract_between('_BERLAKU_', ['_SEUMUR_', 'ON'], text_clean)
     if "SEUMUR HIDUP" in text_clean.upper() or "SEUMUR" in berlaku_raw: data["Berlaku Hingga"] = "SEUMUR HIDUP"
