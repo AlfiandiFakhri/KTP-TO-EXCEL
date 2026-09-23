@@ -1,7 +1,5 @@
 streamlit
-easyocr
+google-generativeai
 pandas
 openpyxl
 pillow
-torch
-torchvision
