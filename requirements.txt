@@ -3,4 +3,5 @@ easyocr
 pandas
 openpyxl
 pillow
-opencv-python-headless
+torch
+torchvision
