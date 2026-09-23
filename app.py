@@ -7,7 +7,7 @@ import re
 
 # --- KOMPONEN UI ---
 st.title("Aplikasi Ekstraksi KTP Khusus NIK & NAMA")
-st.write("Menggunakan pengurutan koordinat teks (Top-to-Bottom OCR) untuk akurasi tinggi pada KTP ber-watermark.")
+st.write("Versi Optimal: Ekstraksi NIK & Nama Super Tangguh untuk KTP Ber-Watermark.")
 
 @st.cache_resource
 def load_reader():
@@ -26,8 +26,9 @@ def parse_ktp_nik_nama(text):
     text_clean = text.replace("{", "3").replace("}", "").replace("|", "I").replace("?", "7").replace("€", "E")
     text_clean = re.sub(r'\s+', ' ', text_clean)
     
-    # 2. Pencarian Global NIK (Mencari 16 digit angka unik di mana pun letaknya)
-    nik_match = re.search(r'\b\d{16}\b', text_clean)
+    # 2. PENCARIAN NIK TAHAN BANTING (Mengabaikan spasi/simbol yang menyelinap di antara angka)
+    text_digits_only = re.sub(r'\D', '', text_clean)
+    nik_match = re.search(r'\d{16}', text_digits_only)
     if nik_match:
         data["NIK"] = nik_match.group(0)
 
@@ -40,23 +41,25 @@ def parse_ktp_nik_nama(text):
     for pat in watermark_patterns:
         text_clean = re.sub(pat, ' ', text_clean, flags=re.IGNORECASE)
 
-    # 4. Pencarian NAMA (Mencari teks setelah label Nama/Nara/Nam)
-    nama_match = re.search(r'(?i)\b(?:Nama|Nara|Narna|Nam)\b\s*[:\s]*([A-Z\s\.\,\']+?)(?=\s+(?:Tempat|Tgl|Lahir|Jenis|Alamat|Agama|NIK|$))', text_clean)
-    if nama_match:
-        nama_bersih = re.sub(r'^[\:\.\-\;\_]+', '', nama_match.group(1)).strip().upper()
-        data["NAMA"] = nama_bersih
-    
-    # Fallback pengaman jika format label agak bergeser
+    # 4. PENCARIAN NAMA YANG FLEKSIBEL
+    words = text_clean.split()
+    for idx, w in enumerate(words):
+        if re.search(r'(?i)^(NAMA|NARA|NARNA|NAM)$', w):
+            candidate_words = []
+            for next_w in words[idx+1:idx+5]:
+                # Berhenti jika mendeteksi label baris berikutnya
+                if any(stop in next_w.upper() for stop in ["TEMPAT", "TGL", "LAHIR", "JENIS", "ALAMAT", "AGAMA", "PROVINSI"]):
+                    break
+                candidate_words.append(next_w)
+            nama_raw = " ".join(candidate_words)
+            data["NAMA"] = re.sub(r'[^A-Z\s]', '', nama_raw).strip().upper()
+            break
+            
+    # Fallback kedua jika label "NAMA" tidak sengaja terlewat
     if not data["NAMA"]:
-        words = text_clean.split()
-        for idx, w in enumerate(words):
-            if w in ["NAMA", "NAMA:", "Nara", "Nam"]:
-                candidate = " ".join(words[idx+1:idx+4])
-                for stop_word in ["TEMPAT", "LAHIR", "JENIS", "ALAMAT", "AGAMA"]:
-                    if stop_word in candidate:
-                        candidate = candidate.split(stop_word)[0]
-                data["NAMA"] = re.sub(r'[^A-Z\s]', '', candidate).strip()
-                break
+        nama_match = re.search(r'(?i)\b(?:NAMA|NARA|NARNA|NAM)\b\s*[:\s]*([A-Z\s\.\,\']+?)(?=\s+(?:Tempat|Tgl|Lahir|Jenis|Alamat|Agama|$))', text_clean)
+        if nama_match:
+            data["NAMA"] = re.sub(r'^[\:\.\-\;\_]+', '', nama_match.group(1)).strip().upper()
 
     return data
 
@@ -84,11 +87,8 @@ if uploaded_files:
                 image_bytes = io.BytesIO()
                 image.save(image_bytes, format='JPEG')
                 
-                # MENGGUNAKAN DETAIL=1 UNTUK MENDAPATKAN KOORDINAT POSISI TEKS
+                # Membaca teks dengan koordinat Top-to-Bottom
                 results = reader.readtext(image_bytes.getvalue(), detail=1)
-                
-                # URUTKAN TEKS DARI ATAS KE BAWAH (Top-to-Bottom berdasarkan koordinat y)
-                # results format: [([[x1,y1], [x2,y1], [x2,y2], [x1,y2]], text, prob), ...]
                 sorted_results = sorted(results, key=lambda x: x[0][0][1])
                 text_lines = [res[1] for res in sorted_results]
                 combined_text = " ".join(text_lines)
