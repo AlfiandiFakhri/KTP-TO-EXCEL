@@ -15,8 +15,8 @@ else:
 st.title("Aplikasi Ekstraksi KTP Pintar (Powered by Gemini AI)")
 st.write("Ekstraksi NIK & Nama berakurasi tinggi menggunakan kecerdasan buatan multimodal.")
 
-# Menggunakan model gemini-2.0-flash yang stabil
-MODEL_NAME = "gemini-2.0-flash"
+# Menggunakan model gemini-3.6-flash sesuai instruksi error terbaru
+MODEL_NAME = "gemini-3.6-flash"
 
 def ekstrak_ktp_dengan_gemini(image):
     """Mengirim gambar KTP langsung ke Gemini AI"""
