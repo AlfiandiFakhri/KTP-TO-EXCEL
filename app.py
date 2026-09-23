@@ -3,12 +3,11 @@ import pandas as pd
 from PIL import Image
 import io
 import json
-import google.generativeai as genai
+from google import genai
 
-# --- KONFIGURASI API GEMINI ---
-# Mengambil API Key secara aman dari Streamlit Secrets
+# --- KONFIGURASI API GEMINI (SDK BARU) ---
 if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 else:
     st.error("API Key Gemini belum disetel di Streamlit Secrets! Tambahkan GEMINI_API_KEY terlebih dahulu.")
 
@@ -16,11 +15,11 @@ else:
 st.title("Aplikasi Ekstraksi KTP Pintar (Powered by Gemini AI)")
 st.write("Ekstraksi NIK & Nama berakurasi tinggi menggunakan kecerdasan buatan multimodal.")
 
-# Pilih model Gemini yang cepat dan mendukung gambar
-MODEL_NAME = "gemini-1.5-flash"
+# Menggunakan model Gemini terbaru yang mendukung SDK baru
+MODEL_NAME = "gemini-2.5-flash"
 
 def ekstrak_ktp_dengan_gemini(image):
-    """Mengirim gambar KTP langsung ke Gemini API untuk diekstrak"""
+    """Mengirim gambar KTP langsung ke Gemini API menggunakan SDK terbaru"""
     prompt = """
     Analisis gambar KTP ini dan ekstrak data berikut secara akurat:
     1. NIK (16 digit angka)
@@ -34,8 +33,10 @@ def ekstrak_ktp_dengan_gemini(image):
     """
     
     try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content([image, prompt])
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[image, prompt]
+        )
         
         # Bersihkan format output jika ada pembungkus markdown code block
         teks_respons = response.text.strip()
