@@ -72,8 +72,19 @@ def parse_ktp_text(text):
     nik_raw = extract_between('_NIK_', ['_NAMA_', '_TTL_'], text_clean)
     nik_val = re.sub(r'\D', '', nik_raw)
     data["NIK"] = nik_val[:16] if len(nik_val) >= 16 else (re.findall(r'\b[0-9]{16}\b', text_clean)[0] if re.findall(r'\b[0-9]{16}\b', text_clean) else "")
+    
+    # Ekstraksi dan Pembersihan NAMA
     data["NAMA"] = extract_between('_NAMA_', ['_TTL_', '_JK_', '_ALAMAT_'], text_clean)
     data["NAMA"] = re.sub(r'(?i)\b(TOMPAT|TORNPAT|TEMPAT|TGL|LAHIR)\b.*$', '', data["NAMA"]).strip()
+
+    # Kamus Typo Khusus NAMA
+    kamus_typo_nama = {
+        r'\bOWI\b': 'DWI',
+        r'\bUTAIYANTI\b': 'UTAMIYANTI'
+    }
+    for salah, benar in kamus_typo_nama.items():
+        data["NAMA"] = re.sub(salah, benar, data["NAMA"], flags=re.IGNORECASE)
+
     # -- TTL --
     ttl_raw = extract_between('_TTL_', ['_JK_', '_GOL_', '_ALAMAT_'], text_clean)
     ttl_raw = re.sub(r'(?i)(TGI|TGL|TCL|TEMPAT|TOMPAT|TORNPAT|TERPA|LAHIR|LAHIS|TEMPAL)\s*', '', ttl_raw).strip()
@@ -94,20 +105,20 @@ def parse_ktp_text(text):
     # -- KAMUS AUTO-KOREKSI ALAMAT PINTAR --
     alamat_jalan = extract_between('_ALAMAT_', ['_RTRW_', '_KELD_', '_KEC_', '_AGAMA_'], text_clean)
     
-    # Kamus pengganti otomatis (Bisa Anda tambah jika ada typo jalan lain di kemudian hari)
+    # Kamus pengganti otomatis
     kamus_alamat = {
         r'\b(?:L|J|JLN)\b\s*': 'JL. ',
         r'\b(?:UUNG|UJUNS)\b': 'UJUNG',
         r'\b(?:FARAPAN)\b': 'HARAPAN',
         r'\b(?:GGTANA|GG\s*TANA|66\s*TANAH|CANG)\b': 'GG. TANAH ',
         r'\b(?:EARU|BARU7|BARU\?)\b': 'BARU',
-        r'\b(?:NO|N0|NOMOR)\b\s*[\?\7]': 'NO. 2', # Memperbaiki typo angka 2 yang sering terbaca ? atau 7
+        r'\b(?:NO|N0|NOMOR)\b\s*[\?\7]': 'NO. 2', 
         r'\b(?:NO|N0|NOMOR)\b\s*': 'NO. '
     }
     
     for pola, perbaikan in kamus_alamat.items():
         alamat_jalan = re.sub(pola, perbaikan, alamat_jalan, flags=re.IGNORECASE)
-    alamat_jalan = re.sub(r'\s+', ' ', alamat_jalan).strip() # Rapikan spasi
+    alamat_jalan = re.sub(r'\s+', ' ', alamat_jalan).strip() 
     
     # RT/RW
     rt_rw_raw = extract_between('_RTRW_', ['_KELD_', '_KEC_', '_AGAMA_'], text_clean)
