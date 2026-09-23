@@ -8,7 +8,7 @@ import difflib
 
 # --- KOMPONEN UI ---
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
-st.write("Ekstraksi KTP Cerdas: Dilengkapi Kamus Auto-Koreksi Alamat & Typo Label.")
+st.write("Ekstraksi KTP Cerdas: Pembersih Watermark Otomatis, Auto-Koreksi, & Multi-Format Gambar.")
 
 @st.cache_resource
 def load_reader():
@@ -41,7 +41,17 @@ def parse_ktp_text(text):
     text_clean = text.replace("{", "3").replace("}", "").replace("|", "I").replace("?", "7").replace("€", "E")
     text_clean = re.sub(r'\s+', ' ', text_clean)
     
-    # Standarisasi TAG Pembatas (Ditambahkan Toleransi Typo Ekstrem dari efek OCR blur)
+    # --- PEMBERSIH WATERMARK / TEKS LATAR BELAKANG KTP ---
+    watermark_patterns = [
+        r'KARTU\s+TANDA\s+PENDUDUK',
+        r'PENDUDUK\s+INDONESIA',
+        r'REPUBLIK\s+INDONESIA'
+    ]
+    for pat in watermark_patterns:
+        text_clean = re.sub(pat, ' ', text_clean, flags=re.IGNORECASE)
+    # ----------------------------------------------------
+
+    # Standarisasi TAG Pembatas (Toleransi Typo Label Diperluas)
     text_clean = re.sub(r'(?i)\b(NIK)\b', ' _NIK_ ', text_clean)
     text_clean = re.sub(r'(?i)\b(Nara|Narna|Nam|Nama)\b\s*(?:Lengkap)?', ' _NAMA_ ', text_clean)
     text_clean = re.sub(r'(?i)(Terpa.*?Lahir|Tenpat.*?Lahir|Tempat.*?Lahir|Tompat.*?Lahir|Tornpat.*?Lahir|Tompautol|Tgl.*?Lahir|Tcl.*?Lahis|Tempat|Tompat|Tornpat)', ' _TTL_ ', text_clean)
@@ -73,7 +83,6 @@ def parse_ktp_text(text):
     data["NIK"] = nik_val[:16] if len(nik_val) >= 16 else (re.findall(r'\b[0-9]{16}\b', text_clean)[0] if re.findall(r'\b[0-9]{16}\b', text_clean) else "")
     
     data["NAMA"] = extract_between('_NAMA_', ['_TTL_', '_JK_', '_ALAMAT_'], text_clean)
-    # Filter pembersih label nyasar ke NAMA diperbarui
     data["NAMA"] = re.sub(r'(?i)\b(TOMPAT|TORNPAT|TOMPAUTOL|TEMPAT|TGL|LAHIR)\b.*$', '', data["NAMA"]).strip()
 
     kamus_typo_nama = {r'\bOWI\b': 'DWI', r'\bUTAIYANTI\b': 'UTAMIYANTI'}
@@ -93,7 +102,6 @@ def parse_ktp_text(text):
 
     jk_raw = extract_between('_JK_', ['_GOL_', '_ALAMAT_', '_RTRW_'], text_clean)
     if re.search(r'LAK|EAK|AKI', jk_raw): data["Jenis Kelamin"] = "LAKI-LAKI"
-    # Menambahkan PEREPU untuk mengatasi typo terpotong
     elif re.search(r'PER|PUAN|EMP|PEREPU', jk_raw): data["Jenis Kelamin"] = "PEREMPUAN"
         
     alamat_jalan = extract_between('_ALAMAT_', ['_RTRW_', '_KELD_', '_KEC_', '_AGAMA_'], text_clean)
@@ -142,7 +150,7 @@ def parse_ktp_text(text):
     pekerjaan_raw = extract_between('_PEKERJAAN_', ['_KWN_', '_BERLAKU_'], text_clean)
     date_loc_match = re.search(r'(\d{2}[\-\/\.]\d{2}[\-\/\.]\d{4}|KOTA|KABUPATEN|KAB\.|PROV|GUBERNUR)', pekerjaan_raw)
     if date_loc_match: pekerjaan_raw = pekerjaan_raw[:date_loc_match.start()]
-    data["Pekerjaan"] = re.sub(r'[^A-Z\s]+$', '', pekerjaan_raw.strip()).strip()
+    data["Pekerjaan"] = re.sub(r'[^A-Z\s\(\)]+$', '', pekerjaan_raw.strip()).strip() # Mendukung tanda kurung seperti (PNS)
 
     kwn_raw = extract_between('_KWN_', ['_BERLAKU_'], text_clean)
     if "WNI" in kwn_raw or "WN" in kwn_raw: data["Kewarganegaraan"] = "WNI"
@@ -155,10 +163,11 @@ def parse_ktp_text(text):
 
     return data
 
-# --- KOMPONEN UNGGAH & PROSES ---
+# --- KOMPONEN UNGGAH & PROSES (Mendukung Multi-Format Gambar) ---
 uploaded_files = st.file_uploader(
     "Pilih atau Seret (Drag & Drop) Banyak Foto KTP Sekaligus", 
-    type=['png', 'jpg', 'jpeg'], accept_multiple_files=True
+    type=['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'tif'], 
+    accept_multiple_files=True
 )
 
 if uploaded_files:
@@ -171,17 +180,13 @@ if uploaded_files:
         for i, uploaded_file in enumerate(uploaded_files):
             status_text.text(f"Memproses file {i+1} dari {total_file}: {uploaded_file.name}")
             try:
-                # KEMBALI MENGGUNAKAN FOTO ASLI (Tanpa Filter Filter Kontras)
                 image = Image.open(uploaded_file)
-                
-                # Konversi ke format dasar untuk standarisasi file
                 if image.mode in ("RGBA", "P"): 
                     image = image.convert("RGB")
                 
                 image_bytes = io.BytesIO()
                 image.save(image_bytes, format='JPEG')
                 
-                # 4. Baca teks dengan OCR
                 hasil = reader.readtext(image_bytes.getvalue(), detail=0)
                 parsed_data = parse_ktp_text(" ".join(hasil))
                 
