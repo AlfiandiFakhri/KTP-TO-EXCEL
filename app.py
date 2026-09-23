@@ -44,7 +44,7 @@ def parse_ktp_text(text):
     # 2. Standarisasi TAG Pembatas
     text_clean = re.sub(r'(?i)\b(NIK)\b', ' _NIK_ ', text_clean)
     text_clean = re.sub(r'(?i)\b(Nara|Narna|Nam|Nama)\b\s*(?:Lengkap)?', ' _NAMA_ ', text_clean)
-    text_clean = re.sub(r'(?i)(Terpa.*?Lahir|Tenpat.*?Lahir|Tempat.*?Lahir|Tgl.*?Lahir|Tcl.*?Lahis)', ' _TTL_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Terpa.*?Lahir|Tenpat.*?Lahir|Tempat.*?Lahir|Tompat.*?Lahir|Tornpat.*?Lahir|Tgl.*?Lahir|Tcl.*?Lahis|Tempat|Tompat|Tornpat)', ' _TTL_ ', text_clean)
     text_clean = re.sub(r'(?i)(Jenis.*?Kelamin|Jenis.*?kel|Jens.*?Keanin)', ' _JK_ ', text_clean)
     text_clean = re.sub(r'(?i)(Gd Darah|Gol.*?Darah|Golongan.*?Darah)', ' _GOL_ ', text_clean)
     text_clean = re.sub(r'(?i)(Aamat|Nlamal|Nemal|Alamat)', ' _ALAMAT_ ', text_clean)
@@ -73,10 +73,10 @@ def parse_ktp_text(text):
     nik_val = re.sub(r'\D', '', nik_raw)
     data["NIK"] = nik_val[:16] if len(nik_val) >= 16 else (re.findall(r'\b[0-9]{16}\b', text_clean)[0] if re.findall(r'\b[0-9]{16}\b', text_clean) else "")
     data["NAMA"] = extract_between('_NAMA_', ['_TTL_', '_JK_', '_ALAMAT_'], text_clean)
-    
+    data["NAMA"] = re.sub(r'(?i)\b(TOMPAT|TORNPAT|TEMPAT|TGL|LAHIR)\b.*$', '', data["NAMA"]).strip()
     # -- TTL --
     ttl_raw = extract_between('_TTL_', ['_JK_', '_GOL_', '_ALAMAT_'], text_clean)
-    ttl_raw = re.sub(r'(?i)(TGI|TGL|TCL|TEMPAT|TERPA|LAHIR|LAHIS|TEMPAL)\s*', '', ttl_raw).strip()
+    ttl_raw = re.sub(r'(?i)(TGI|TGL|TCL|TEMPAT|TOMPAT|TORNPAT|TERPA|LAHIR|LAHIS|TEMPAL)\s*', '', ttl_raw).strip()
     date_match = re.search(r'(\d{2})[-/\s\.]*(\d{2})[-/\s\.]*(\d{4})', ttl_raw)
     if date_match:
         tgl_format_rapi = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
