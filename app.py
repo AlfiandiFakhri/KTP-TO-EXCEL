@@ -8,7 +8,7 @@ import difflib
 
 # --- KOMPONEN UI ---
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
-st.write("Ekstraksi KTP Cerdas: Pembersih Watermark Otomatis, Auto-Koreksi, & Multi-Format Gambar.")
+st.write("Ekstraksi KTP Cerdas: Global Pencarian NIK/Nama, Pembersih Watermark, & Multi-Format Gambar.")
 
 @st.cache_resource
 def load_reader():
@@ -41,19 +41,27 @@ def parse_ktp_text(text):
     text_clean = text.replace("{", "3").replace("}", "").replace("|", "I").replace("?", "7").replace("€", "E")
     text_clean = re.sub(r'\s+', ' ', text_clean)
     
-    # --- PEMBERSIH WATERMARK / TEKS LATAR BELAKANG KTP ---
-    watermark_patterns = [
-        r'KARTU\s+TANDA\s+PENDUDUK',
-        r'PENDUDUK\s+INDONESIA',
-        r'REPUBLIK\s+INDONESIA'
-    ]
+    # 1. PENCARIAN LANGSUNG NIK (GLOBAL REGEX)
+    nik_global_match = re.search(r'\b\d{16}\b', text_clean)
+    if nik_global_match:
+        data["NIK"] = nik_global_match.group(0)
+
+    # 2. PENCARIAN LANGSUNG NAMA
+    nama_match = re.search(r'(?i)\b(?:Nama|Nara|Narna|Nam)\b\s*[:\s]*([A-Z\s\.\,\']+?)(?=\s+(?:Tempat|Tgl|Lahir|Jenis|Alamat|Agama|$))', text_clean)
+    if nama_match:
+        nama_bersih = re.sub(r'^[\:\.\-\;\_]+', '', nama_match.group(1)).strip().upper()
+        data["NAMA"] = nama_bersih
+    
+    kamus_typo_nama = {r'\bOWI\b': 'DWI', r'\bUTAIYANTI\b': 'UTAMIYANTI'}
+    for salah, benar in kamus_typo_nama.items():
+        data["NAMA"] = re.sub(salah, benar, data["NAMA"], flags=re.IGNORECASE)
+
+    # Pembersih Watermark Latar Belakang KTP Lama
+    watermark_patterns = [r'KARTU\s+TANDA\s+PENDUDUK', r'PENDUDUK\s+INDONESIA', r'REPUBLIK\s+INDONESIA']
     for pat in watermark_patterns:
         text_clean = re.sub(pat, ' ', text_clean, flags=re.IGNORECASE)
-    # ----------------------------------------------------
 
-    # Standarisasi TAG Pembatas (Toleransi Typo Label Diperluas)
-    text_clean = re.sub(r'(?i)\b(NIK)\b', ' _NIK_ ', text_clean)
-    text_clean = re.sub(r'(?i)\b(Nara|Narna|Nam|Nama)\b\s*(?:Lengkap)?', ' _NAMA_ ', text_clean)
+    # Standarisasi TAG Pembatas untuk Field Lainnya
     text_clean = re.sub(r'(?i)(Terpa.*?Lahir|Tenpat.*?Lahir|Tempat.*?Lahir|Tompat.*?Lahir|Tornpat.*?Lahir|Tompautol|Tgl.*?Lahir|Tcl.*?Lahis|Tempat|Tompat|Tornpat)', ' _TTL_ ', text_clean)
     text_clean = re.sub(r'(?i)(Jenis.*?Kelamin|Jenis.*?kel|Jens.*?Keanin)', ' _JK_ ', text_clean)
     text_clean = re.sub(r'(?i)(Gd Darah|Gol.*?Darah|Golongan.*?Darah)', ' _GOL_ ', text_clean)
@@ -78,17 +86,7 @@ def parse_ktp_text(text):
             return re.sub(r'^[\:\.\-\;\_]+', '', res).strip().upper()
         return ""
 
-    nik_raw = extract_between('_NIK_', ['_NAMA_', '_TTL_'], text_clean)
-    nik_val = re.sub(r'\D', '', nik_raw)
-    data["NIK"] = nik_val[:16] if len(nik_val) >= 16 else (re.findall(r'\b[0-9]{16}\b', text_clean)[0] if re.findall(r'\b[0-9]{16}\b', text_clean) else "")
-    
-    data["NAMA"] = extract_between('_NAMA_', ['_TTL_', '_JK_', '_ALAMAT_'], text_clean)
-    data["NAMA"] = re.sub(r'(?i)\b(TOMPAT|TORNPAT|TOMPAUTOL|TEMPAT|TGL|LAHIR)\b.*$', '', data["NAMA"]).strip()
-
-    kamus_typo_nama = {r'\bOWI\b': 'DWI', r'\bUTAIYANTI\b': 'UTAMIYANTI'}
-    for salah, benar in kamus_typo_nama.items():
-        data["NAMA"] = re.sub(salah, benar, data["NAMA"], flags=re.IGNORECASE)
-
+    # -- TTL --
     ttl_raw = extract_between('_TTL_', ['_JK_', '_GOL_', '_ALAMAT_'], text_clean)
     ttl_raw = re.sub(r'(?i)(TGI|TGL|TCL|TEMPAT|TOMPAT|TORNPAT|TOMPAUTOL|TERPA|LAHIR|LAHIS|TEMPAL)\s*', '', ttl_raw).strip()
     date_match = re.search(r'(\d{2})[-/\s\.]*(\d{2})[-/\s\.]*(\d{4})', ttl_raw)
@@ -100,10 +98,12 @@ def parse_ktp_text(text):
     else:
         data["Tempat/Tgl Lahir"] = ttl_raw
 
+    # -- JENIS KELAMIN --
     jk_raw = extract_between('_JK_', ['_GOL_', '_ALAMAT_', '_RTRW_'], text_clean)
     if re.search(r'LAK|EAK|AKI', jk_raw): data["Jenis Kelamin"] = "LAKI-LAKI"
     elif re.search(r'PER|PUAN|EMP|PEREPU', jk_raw): data["Jenis Kelamin"] = "PEREMPUAN"
         
+    # -- ALAMAT --
     alamat_jalan = extract_between('_ALAMAT_', ['_RTRW_', '_KELD_', '_KEC_', '_AGAMA_'], text_clean)
     kamus_alamat = {
         r'\b(?:L|J|JLN)\b\s*': 'JL. ', r'\b(?:UUNG|UJUNS)\b': 'UJUNG',
@@ -131,6 +131,7 @@ def parse_ktp_text(text):
     if kec_final: alamat_lengkap += f" KECAMATAN {kec_final}"
     data["Alamat"] = alamat_lengkap.strip()
     
+    # -- AGAMA --
     agama_raw = extract_between('_AGAMA_', ['_STATUS_', '_PEKERJAAN_', '_KWN_'], text_clean)
     if re.search(r'ISLAM|1SLAM|AMIN', agama_raw): data["Agama"] = "ISLAM"
     elif re.search(r'KRISTEN', agama_raw): data["Agama"] = "KRISTEN"
@@ -140,6 +141,7 @@ def parse_ktp_text(text):
     elif re.search(r'KONGHUCU', agama_raw): data["Agama"] = "KONGHUCU"
     else: data["Agama"] = ""
             
+    # -- STATUS PERKAWINAN --
     status_raw = extract_between('_STATUS_', ['_PEKERJAAN_', '_KWN_', '_BERLAKU_'], text_clean)
     if re.search(r'BELUM\s*KAW|BELUM', status_raw): data["Status Perkawinan"] = "BELUM KAWIN"
     elif re.search(r'CERAI\s*MATI', status_raw): data["Status Perkawinan"] = "CERAI MATI"
@@ -147,11 +149,13 @@ def parse_ktp_text(text):
     elif re.search(r'KAW|KAV|KAW1N', status_raw): data["Status Perkawinan"] = "KAWIN"
     else: data["Status Perkawinan"] = ""
             
+    # -- PEKERJAAN --
     pekerjaan_raw = extract_between('_PEKERJAAN_', ['_KWN_', '_BERLAKU_'], text_clean)
     date_loc_match = re.search(r'(\d{2}[\-\/\.]\d{2}[\-\/\.]\d{4}|KOTA|KABUPATEN|KAB\.|PROV|GUBERNUR)', pekerjaan_raw)
     if date_loc_match: pekerjaan_raw = pekerjaan_raw[:date_loc_match.start()]
-    data["Pekerjaan"] = re.sub(r'[^A-Z\s\(\)]+$', '', pekerjaan_raw.strip()).strip() # Mendukung tanda kurung seperti (PNS)
+    data["Pekerjaan"] = re.sub(r'[^A-Z\s\(\)]+$', '', pekerjaan_raw.strip()).strip()
 
+    # -- KEWARGANEGARAAN & BERLAKU --
     kwn_raw = extract_between('_KWN_', ['_BERLAKU_'], text_clean)
     if "WNI" in kwn_raw or "WN" in kwn_raw: data["Kewarganegaraan"] = "WNI"
     elif "WNA" in kwn_raw: data["Kewarganegaraan"] = "WNA"
@@ -163,7 +167,7 @@ def parse_ktp_text(text):
 
     return data
 
-# --- KOMPONEN UNGGAH & PROSES (Mendukung Multi-Format Gambar) ---
+# --- KOMPONEN UNGGAH & PROSES ---
 uploaded_files = st.file_uploader(
     "Pilih atau Seret (Drag & Drop) Banyak Foto KTP Sekaligus", 
     type=['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'tif'], 
