@@ -5,9 +5,15 @@ import io
 import json
 from google import genai
 
-# --- KONFIGURASI API GEMINI (SDK BARU) ---
+# --- KONFIGURASI API GEMINI (DENGAN MODE ENTERPRISE / AQ KEY) ---
 if "GEMINI_API_KEY" in st.secrets:
-    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+    # Mengonfigurasi client dengan Project ID Anda untuk kunci berawalan AQ.
+    client = genai.Client(
+        enterprise=True,
+        project="799108228030",
+        location="us-central1",
+        api_key=st.secrets["GEMINI_API_KEY"]
+    )
 else:
     st.error("API Key Gemini belum disetel di Streamlit Secrets! Tambahkan GEMINI_API_KEY terlebih dahulu.")
 
@@ -15,7 +21,7 @@ else:
 st.title("Aplikasi Ekstraksi KTP Pintar (Powered by Gemini AI)")
 st.write("Ekstraksi NIK & Nama berakurasi tinggi menggunakan kecerdasan buatan multimodal.")
 
-# Menggunakan model Gemini terbaru yang mendukung SDK baru
+# Menggunakan model Gemini terbaru
 MODEL_NAME = "gemini-2.5-flash"
 
 def ekstrak_ktp_dengan_gemini(image):
