@@ -1,14 +1,14 @@
 import streamlit as st
 import easyocr
 import pandas as pd
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageOps
 import io
 import re
 import difflib
 
 # --- KOMPONEN UI ---
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
-st.write("Ekstraksi KTP Cerdas: Dilengkapi Kamus Auto-Koreksi Alamat, Nama Kota & Typo Label.")
+st.write("Ekstraksi KTP Cerdas: Dilengkapi Kamus Auto-Koreksi, Toleransi Typo, & Penajam Gambar Otomatis.")
 
 @st.cache_resource
 def load_reader():
@@ -169,10 +169,26 @@ if uploaded_files:
         for i, uploaded_file in enumerate(uploaded_files):
             status_text.text(f"Memproses file {i+1} dari {total_file}: {uploaded_file.name}")
             try:
+                # 1. Buka Gambar Asli
                 image = Image.open(uploaded_file)
+                
+                # 2. Pra-Pemrosesan Gambar (Image Enhancement)
+                # Ubah ke Grayscale (Hitam Putih)
+                image = ImageOps.grayscale(image)
+                
+                # Tingkatkan Kontras (2.0 = 2x lipat lebih kontras)
+                enhancer_contrast = ImageEnhance.Contrast(image)
+                image = enhancer_contrast.enhance(2.0)
+                
+                # Tingkatkan Ketajaman (2.0 = 2x lipat lebih tajam)
+                enhancer_sharp = ImageEnhance.Sharpness(image)
+                image = enhancer_sharp.enhance(2.0)
+                
+                # 3. Simpan ke Bytes untuk dibaca EasyOCR
                 image_bytes = io.BytesIO()
                 image.save(image_bytes, format='JPEG')
                 
+                # 4. Baca teks dengan OCR
                 hasil = reader.readtext(image_bytes.getvalue(), detail=0)
                 parsed_data = parse_ktp_text(" ".join(hasil))
                 
@@ -181,6 +197,7 @@ if uploaded_files:
                 data_hasil.append(row_data)
             except Exception as e:
                 data_hasil.append({"No": i + 1, "NIK": f"Error: {e}", "NAMA": uploaded_file.name})
+            
             progress_bar.progress((i + 1) / total_file)
         
         st.success("Proses ekstraksi massal selesai!")
