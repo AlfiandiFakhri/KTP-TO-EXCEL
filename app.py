@@ -1,14 +1,14 @@
 import streamlit as st
 import easyocr
 import pandas as pd
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image
 import io
 import re
 import difflib
 
 # --- KOMPONEN UI ---
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
-st.write("Ekstraksi KTP Cerdas: Dilengkapi Kamus Auto-Koreksi, Toleransi Typo, & Penajam Gambar Otomatis.")
+st.write("Ekstraksi KTP Cerdas: Dilengkapi Kamus Auto-Koreksi Alamat & Typo Label.")
 
 @st.cache_resource
 def load_reader():
@@ -41,10 +41,10 @@ def parse_ktp_text(text):
     text_clean = text.replace("{", "3").replace("}", "").replace("|", "I").replace("?", "7").replace("€", "E")
     text_clean = re.sub(r'\s+', ' ', text_clean)
     
-    # Standarisasi TAG Pembatas
+    # Standarisasi TAG Pembatas (Ditambahkan Toleransi Typo Ekstrem dari efek OCR blur)
     text_clean = re.sub(r'(?i)\b(NIK)\b', ' _NIK_ ', text_clean)
     text_clean = re.sub(r'(?i)\b(Nara|Narna|Nam|Nama)\b\s*(?:Lengkap)?', ' _NAMA_ ', text_clean)
-    text_clean = re.sub(r'(?i)(Terpa.*?Lahir|Tenpat.*?Lahir|Tempat.*?Lahir|Tompat.*?Lahir|Tornpat.*?Lahir|Tgl.*?Lahir|Tcl.*?Lahis|Tempat|Tompat|Tornpat)', ' _TTL_ ', text_clean)
+    text_clean = re.sub(r'(?i)(Terpa.*?Lahir|Tenpat.*?Lahir|Tempat.*?Lahir|Tompat.*?Lahir|Tornpat.*?Lahir|Tompautol|Tgl.*?Lahir|Tcl.*?Lahis|Tempat|Tompat|Tornpat)', ' _TTL_ ', text_clean)
     text_clean = re.sub(r'(?i)(Jenis.*?Kelamin|Jenis.*?kel|Jens.*?Keanin)', ' _JK_ ', text_clean)
     text_clean = re.sub(r'(?i)(Gd Darah|Gol.*?Darah|Golongan.*?Darah)', ' _GOL_ ', text_clean)
     text_clean = re.sub(r'(?i)(Alamat|Aamat|Nlamal|Nemal|Alamet)', ' _ALAMAT_ ', text_clean)
@@ -73,14 +73,15 @@ def parse_ktp_text(text):
     data["NIK"] = nik_val[:16] if len(nik_val) >= 16 else (re.findall(r'\b[0-9]{16}\b', text_clean)[0] if re.findall(r'\b[0-9]{16}\b', text_clean) else "")
     
     data["NAMA"] = extract_between('_NAMA_', ['_TTL_', '_JK_', '_ALAMAT_'], text_clean)
-    data["NAMA"] = re.sub(r'(?i)\b(TOMPAT|TORNPAT|TEMPAT|TGL|LAHIR)\b.*$', '', data["NAMA"]).strip()
+    # Filter pembersih label nyasar ke NAMA diperbarui
+    data["NAMA"] = re.sub(r'(?i)\b(TOMPAT|TORNPAT|TOMPAUTOL|TEMPAT|TGL|LAHIR)\b.*$', '', data["NAMA"]).strip()
 
     kamus_typo_nama = {r'\bOWI\b': 'DWI', r'\bUTAIYANTI\b': 'UTAMIYANTI'}
     for salah, benar in kamus_typo_nama.items():
         data["NAMA"] = re.sub(salah, benar, data["NAMA"], flags=re.IGNORECASE)
 
     ttl_raw = extract_between('_TTL_', ['_JK_', '_GOL_', '_ALAMAT_'], text_clean)
-    ttl_raw = re.sub(r'(?i)(TGI|TGL|TCL|TEMPAT|TOMPAT|TORNPAT|TERPA|LAHIR|LAHIS|TEMPAL)\s*', '', ttl_raw).strip()
+    ttl_raw = re.sub(r'(?i)(TGI|TGL|TCL|TEMPAT|TOMPAT|TORNPAT|TOMPAUTOL|TERPA|LAHIR|LAHIS|TEMPAL)\s*', '', ttl_raw).strip()
     date_match = re.search(r'(\d{2})[-/\s\.]*(\d{2})[-/\s\.]*(\d{4})', ttl_raw)
     if date_match:
         tgl_format_rapi = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
@@ -92,7 +93,8 @@ def parse_ktp_text(text):
 
     jk_raw = extract_between('_JK_', ['_GOL_', '_ALAMAT_', '_RTRW_'], text_clean)
     if re.search(r'LAK|EAK|AKI', jk_raw): data["Jenis Kelamin"] = "LAKI-LAKI"
-    elif re.search(r'PER|PUAN|EMP', jk_raw): data["Jenis Kelamin"] = "PEREMPUAN"
+    # Menambahkan PEREPU untuk mengatasi typo terpotong
+    elif re.search(r'PER|PUAN|EMP|PEREPU', jk_raw): data["Jenis Kelamin"] = "PEREMPUAN"
         
     alamat_jalan = extract_between('_ALAMAT_', ['_RTRW_', '_KELD_', '_KEC_', '_AGAMA_'], text_clean)
     kamus_alamat = {
@@ -122,7 +124,7 @@ def parse_ktp_text(text):
     data["Alamat"] = alamat_lengkap.strip()
     
     agama_raw = extract_between('_AGAMA_', ['_STATUS_', '_PEKERJAAN_', '_KWN_'], text_clean)
-    if re.search(r'ISLAM|1SLAM', agama_raw): data["Agama"] = "ISLAM"
+    if re.search(r'ISLAM|1SLAM|AMIN', agama_raw): data["Agama"] = "ISLAM"
     elif re.search(r'KRISTEN', agama_raw): data["Agama"] = "KRISTEN"
     elif re.search(r'KATOLIK', agama_raw): data["Agama"] = "KATOLIK"
     elif re.search(r'HINDU', agama_raw): data["Agama"] = "HINDU"
@@ -169,22 +171,13 @@ if uploaded_files:
         for i, uploaded_file in enumerate(uploaded_files):
             status_text.text(f"Memproses file {i+1} dari {total_file}: {uploaded_file.name}")
             try:
-                # 1. Buka Gambar Asli
+                # KEMBALI MENGGUNAKAN FOTO ASLI (Tanpa Filter Filter Kontras)
                 image = Image.open(uploaded_file)
                 
-                # 2. Pra-Pemrosesan Gambar (Image Enhancement)
-                # Ubah ke Grayscale (Hitam Putih)
-                image = ImageOps.grayscale(image)
+                # Konversi ke format dasar untuk standarisasi file
+                if image.mode in ("RGBA", "P"): 
+                    image = image.convert("RGB")
                 
-                # Tingkatkan Kontras (2.0 = 2x lipat lebih kontras)
-                enhancer_contrast = ImageEnhance.Contrast(image)
-                image = enhancer_contrast.enhance(2.0)
-                
-                # Tingkatkan Ketajaman (2.0 = 2x lipat lebih tajam)
-                enhancer_sharp = ImageEnhance.Sharpness(image)
-                image = enhancer_sharp.enhance(2.0)
-                
-                # 3. Simpan ke Bytes untuk dibaca EasyOCR
                 image_bytes = io.BytesIO()
                 image.save(image_bytes, format='JPEG')
                 
