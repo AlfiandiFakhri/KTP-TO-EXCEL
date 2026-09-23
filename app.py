@@ -5,9 +5,8 @@ import io
 import json
 from google import genai
 
-# --- KONFIGURASI API GEMINI (YANG BENAR UNTUK API KEY) ---
+# --- KONFIGURASI API GEMINI ---
 if "GEMINI_API_KEY" in st.secrets:
-    # Cukup panggil Client dengan api_key saja TANPA enterprise=True, project, dan location
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 else:
     st.error("API Key Gemini belum disetel di Streamlit Secrets! Tambahkan GEMINI_API_KEY terlebih dahulu.")
@@ -16,11 +15,11 @@ else:
 st.title("Aplikasi Ekstraksi KTP Pintar (Powered by Gemini AI)")
 st.write("Ekstraksi NIK & Nama berakurasi tinggi menggunakan kecerdasan buatan multimodal.")
 
-# Menggunakan model Gemini terbaru
-MODEL_NAME = "gemini-2.5-flash"
+# Menggunakan model gemini-1.5-flash yang stabil
+MODEL_NAME = "gemini-1.5-flash"
 
 def ekstrak_ktp_dengan_gemini(image):
-    """Mengirim gambar KTP langsung ke Gemini API menggunakan API Key standar"""
+    """Mengirim gambar KTP langsung ke Gemini API"""
     prompt = """
     Analisis gambar KTP ini dan ekstrak data berikut secara akurat:
     1. NIK (16 digit angka)
