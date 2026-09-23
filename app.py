@@ -5,6 +5,8 @@ from PIL import Image
 import io
 import re
 import difflib
+import cv2
+import numpy as np
 
 st.title("Aplikasi Batch Scan & Format KTP ke Excel")
 st.write("Ekstraksi KTP Cerdas: Dilengkapi Kamus Auto-Koreksi Alamat & Nama Kota.")
@@ -15,6 +17,26 @@ def load_reader():
 
 with st.spinner("Memuat sistem AI pembaca KTP..."):
     reader = load_reader()
+
+# --- FUNGSI BARU: PREPROCESSING GAMBAR ---
+def preprocess_ktp(image_pil):
+    # Konversi PIL Image ke format array OpenCV (RGB ke BGR)
+    img_array = np.array(image_pil.convert('RGB'))
+    img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+    
+    # 1. Grayscale (Hitam Putih) untuk menghilangkan gangguan warna biru KTP
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    
+    # 2. Perbesar ukuran gambar 2x lipat agar tepi teks (piksel) lebih tegas
+    gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    
+    # 3. Denoising untuk mengurangi bintik-bintik/noise pada foto
+    denoised = cv2.fastNlMeansDenoising(gray, h=10)
+    
+    # 4. Thresholding (Otsu) untuk membuat teks menjadi hitam pekat dan background putih bersih
+    _, thresh = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    
+    return thresh
 
 # DATABASE NAMA KOTA INDONESIA
 DAFTAR_KOTA_INDO = [
@@ -94,20 +116,19 @@ def parse_ktp_text(text):
     # -- KAMUS AUTO-KOREKSI ALAMAT PINTAR --
     alamat_jalan = extract_between('_ALAMAT_', ['_RTRW_', '_KELD_', '_KEC_', '_AGAMA_'], text_clean)
     
-    # Kamus pengganti otomatis (Bisa Anda tambah jika ada typo jalan lain di kemudian hari)
     kamus_alamat = {
         r'\b(?:L|J|JLN)\b\s*': 'JL. ',
         r'\b(?:UUNG|UJUNS)\b': 'UJUNG',
         r'\b(?:FARAPAN)\b': 'HARAPAN',
         r'\b(?:GGTANA|GG\s*TANA|66\s*TANAH|CANG)\b': 'GG. TANAH ',
         r'\b(?:EARU|BARU7|BARU\?)\b': 'BARU',
-        r'\b(?:NO|N0|NOMOR)\b\s*[\?\7]': 'NO. 2', # Memperbaiki typo angka 2 yang sering terbaca ? atau 7
+        r'\b(?:NO|N0|NOMOR)\b\s*[\?\7]': 'NO. 2',
         r'\b(?:NO|N0|NOMOR)\b\s*': 'NO. '
     }
     
     for pola, perbaikan in kamus_alamat.items():
         alamat_jalan = re.sub(pola, perbaikan, alamat_jalan, flags=re.IGNORECASE)
-    alamat_jalan = re.sub(r'\s+', ' ', alamat_jalan).strip() # Rapikan spasi
+    alamat_jalan = re.sub(r'\s+', ' ', alamat_jalan).strip()
     
     # RT/RW
     rt_rw_raw = extract_between('_RTRW_', ['_KELD_', '_KEC_', '_AGAMA_'], text_clean)
@@ -172,10 +193,14 @@ if uploaded_files:
             status_text.text(f"Memproses file {i+1} dari {total_file}: {uploaded_file.name}")
             try:
                 image = Image.open(uploaded_file)
-                image_bytes = io.BytesIO()
-                image.save(image_bytes, format='JPEG')
                 
-                hasil = reader.readtext(image_bytes.getvalue(), detail=0)
+                # --- TERAPKAN PREPROCESSING DI SINI ---
+                img_processed = preprocess_ktp(image)
+                
+                # Berikan gambar hasil preprocessing langsung ke EasyOCR (mendukung format NumPy dari OpenCV)
+                hasil = reader.readtext(img_processed, detail=0)
+                # --------------------------------------
+                
                 parsed_data = parse_ktp_text(" ".join(hasil))
                 
                 row_data = {"No": i + 1}
