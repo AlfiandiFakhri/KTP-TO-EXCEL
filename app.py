@@ -3,7 +3,7 @@ import pandas as pd
 from PIL import Image
 import io
 import json
-import time  # <-- Tambahan pustaka waktu untuk memberi jeda
+import time  # <-- Pustaka waktu
 from google import genai
 
 # --- KONFIGURASI API GEMINI ---
@@ -16,7 +16,7 @@ else:
 st.title("Aplikasi Ekstraksi KTP Pintar (Powered by Gemini AI)")
 st.write("Ekstraksi NIK & Nama berakurasi tinggi menggunakan kecerdasan buatan multimodal.")
 
-# Menggunakan model gemini-3.6-flash sesuai instruksi error terbaru
+# Menggunakan model gemini-3.6-flash sesuai standar AI Studio
 MODEL_NAME = "gemini-3.6-flash"
 
 def ekstrak_ktp_dengan_gemini(image):
@@ -39,7 +39,7 @@ def ekstrak_ktp_dengan_gemini(image):
             contents=[image, prompt]
         )
         
-        # Bersihkan format output jika ada pembungkus markdown code block
+        # Bersihkan format output
         teks_respons = response.text.strip()
         teks_respons = teks_respons.replace("```json", "").replace("```", "").strip()
         
@@ -76,11 +76,11 @@ if uploaded_files:
                 row_data.update(hasil_ekstraksi)
                 data_hasil.append(row_data)
                 
-                # --- OPSI 1: JEDA WAKTU UNTUK MENGHINDARI LIMIT GRATIS ---
-                # Memberi jeda 5 detik jika file ini bukan file terakhir
+                # --- JEDA WAKTU 10 DETIK ---
+                # Jeda diperpanjang menjadi 10 detik agar 100% aman dari limit API Gratis
                 if i < total_file - 1:
-                    status_text.text(f"File {i+1} selesai. Menunggu 5 detik sebelum lanjut agar aman dari limit AI...")
-                    time.sleep(5)
+                    status_text.text(f"File {i+1} selesai. Menunggu 10 detik agar server AI tidak penuh...")
+                    time.sleep(10)
                     
             except Exception as e:
                 data_hasil.append({"No": i + 1, "NIK": f"Error: {e}", "NAMA": uploaded_file.name})
