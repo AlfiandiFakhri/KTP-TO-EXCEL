@@ -3,7 +3,7 @@ import pandas as pd
 from PIL import Image
 import io
 import json
-import time  # <-- Pustaka waktu
+import time 
 from google import genai
 
 # --- KONFIGURASI API GEMINI ---
@@ -16,11 +16,10 @@ else:
 st.title("Aplikasi Ekstraksi KTP Pintar (Powered by Gemini AI)")
 st.write("Ekstraksi NIK & Nama berakurasi tinggi menggunakan kecerdasan buatan multimodal.")
 
-# Menggunakan model gemini-3.6-flash sesuai standar AI Studio
 MODEL_NAME = "gemini-3.6-flash"
 
-def ekstrak_ktp_dengan_gemini(image):
-    """Mengirim gambar KTP langsung ke Gemini AI"""
+def ekstrak_ktp_dengan_gemini(image, batas_percobaan=3):
+    """Mengirim gambar KTP dengan fitur Auto-Retry (Pantang Menyerah)"""
     prompt = """
     Analisis gambar KTP ini dan ekstrak data berikut secara akurat:
     1. NIK (16 digit angka)
@@ -33,20 +32,32 @@ def ekstrak_ktp_dengan_gemini(image):
     }
     """
     
-    try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[image, prompt]
-        )
-        
-        # Bersihkan format output
-        teks_respons = response.text.strip()
-        teks_respons = teks_respons.replace("```json", "").replace("```", "").strip()
-        
-        data_json = json.loads(teks_respons)
-        return data_json
-    except Exception as e:
-        return {"NIK": f"Error: {str(e)}", "NAMA": "GAGAL"}
+    # Sistem akan mencoba mengulang otomatis maksimal 3 kali jika ditolak Google
+    for percobaan in range(batas_percobaan):
+        try:
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=[image, prompt]
+            )
+            
+            # Bersihkan format output
+            teks_respons = response.text.strip()
+            teks_respons = teks_respons.replace("```json", "").replace("```", "").strip()
+            
+            data_json = json.loads(teks_respons)
+            return data_json
+            
+        except Exception as e:
+            pesan_error = str(e)
+            
+            # Jika error 429 (kuota padat), tunggu 15 detik lalu COBA LAGI KTP YANG SAMA
+            if "429" in pesan_error or "RESOURCE_EXHAUSTED" in pesan_error:
+                if percobaan < batas_percobaan - 1:
+                    time.sleep(15) # Jeda istirahat 15 detik sebelum diulang
+                    continue # Kembali memproses KTP yang sama
+            
+            # Jika sudah diulang 3x dan tetap gagal, baru dicatat Error di Excel
+            return {"NIK": f"Error: {pesan_error}", "NAMA": "GAGAL"}
 
 # --- KOMPONEN UNGGAH & PROSES ---
 uploaded_files = st.file_uploader(
@@ -63,7 +74,7 @@ if uploaded_files:
         total_file = len(uploaded_files)
         
         for i, uploaded_file in enumerate(uploaded_files):
-            status_text.text(f"Memproses file {i+1} dari {total_file}: {uploaded_file.name}")
+            status_text.text(f"Memproses KTP {i+1} dari {total_file}: {uploaded_file.name}")
             try:
                 image = Image.open(uploaded_file)
                 if image.mode in ("RGBA", "P"): 
@@ -76,14 +87,13 @@ if uploaded_files:
                 row_data.update(hasil_ekstraksi)
                 data_hasil.append(row_data)
                 
-                # --- JEDA WAKTU 10 DETIK ---
-                # Jeda diperpanjang menjadi 10 detik agar 100% aman dari limit API Gratis
+                # Jeda normal 10 detik antar KTP
                 if i < total_file - 1:
-                    status_text.text(f"File {i+1} selesai. Menunggu 10 detik agar server AI tidak penuh...")
+                    status_text.text(f"KTP {i+1} selesai. Menjeda 10 detik agar aman dari limit...")
                     time.sleep(10)
                     
             except Exception as e:
-                data_hasil.append({"No": i + 1, "NIK": f"Error: {e}", "NAMA": uploaded_file.name})
+                data_hasil.append({"No": i + 1, "NIK": f"Error Sistem: {e}", "NAMA": uploaded_file.name})
             
             progress_bar.progress((i + 1) / total_file)
         
