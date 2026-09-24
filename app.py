@@ -3,6 +3,7 @@ import pandas as pd
 from PIL import Image
 import io
 import json
+import time  # <-- Tambahan pustaka waktu untuk memberi jeda
 from google import genai
 
 # --- KONFIGURASI API GEMINI ---
@@ -74,12 +75,20 @@ if uploaded_files:
                 row_data = {"No": i + 1}
                 row_data.update(hasil_ekstraksi)
                 data_hasil.append(row_data)
+                
+                # --- OPSI 1: JEDA WAKTU UNTUK MENGHINDARI LIMIT GRATIS ---
+                # Memberi jeda 5 detik jika file ini bukan file terakhir
+                if i < total_file - 1:
+                    status_text.text(f"File {i+1} selesai. Menunggu 5 detik sebelum lanjut agar aman dari limit AI...")
+                    time.sleep(5)
+                    
             except Exception as e:
                 data_hasil.append({"No": i + 1, "NIK": f"Error: {e}", "NAMA": uploaded_file.name})
             
             progress_bar.progress((i + 1) / total_file)
         
         st.success("Proses ekstraksi massal selesai!")
+        status_text.text("Semua KTP berhasil diproses.")
         
         df_hasil = pd.DataFrame(data_hasil)
         st.dataframe(df_hasil)
