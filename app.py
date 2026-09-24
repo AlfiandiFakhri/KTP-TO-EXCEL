@@ -18,8 +18,8 @@ st.write("Ekstraksi NIK & Nama berakurasi tinggi menggunakan kecerdasan buatan m
 
 MODEL_NAME = "gemini-3.6-flash"
 
-def ekstrak_ktp_dengan_gemini(image, batas_percobaan=3):
-    """Mengirim gambar KTP dengan fitur Auto-Retry (Pantang Menyerah)"""
+def ekstrak_ktp_dengan_gemini(image, status_ui=None, batas_percobaan=3):
+    """Mengirim gambar KTP dengan fitur Auto-Retry (Tunggu 60 Detik)"""
     prompt = """
     Analisis gambar KTP ini dan ekstrak data berikut secara akurat:
     1. NIK (16 digit angka)
@@ -32,7 +32,6 @@ def ekstrak_ktp_dengan_gemini(image, batas_percobaan=3):
     }
     """
     
-    # Sistem akan mencoba mengulang otomatis maksimal 3 kali jika ditolak Google
     for percobaan in range(batas_percobaan):
         try:
             response = client.models.generate_content(
@@ -50,13 +49,16 @@ def ekstrak_ktp_dengan_gemini(image, batas_percobaan=3):
         except Exception as e:
             pesan_error = str(e)
             
-            # Jika error 429 (kuota padat), tunggu 15 detik lalu COBA LAGI KTP YANG SAMA
+            # Jika error 429, tunggu 60 detik sesuai permintaan Google
             if "429" in pesan_error or "RESOURCE_EXHAUSTED" in pesan_error:
                 if percobaan < batas_percobaan - 1:
-                    time.sleep(15) # Jeda istirahat 15 detik sebelum diulang
-                    continue # Kembali memproses KTP yang sama
+                    if status_ui:
+                        status_ui.text("Server Google sibuk (Limit). Otomatis menunggu 60 detik sebelum mengulang...")
+                    time.sleep(60) # Jeda istirahat 60 detik
+                    if status_ui:
+                        status_ui.text("Mencoba ulang memproses KTP...")
+                    continue 
             
-            # Jika sudah diulang 3x dan tetap gagal, baru dicatat Error di Excel
             return {"NIK": f"Error: {pesan_error}", "NAMA": "GAGAL"}
 
 # --- KOMPONEN UNGGAH & PROSES ---
@@ -80,8 +82,8 @@ if uploaded_files:
                 if image.mode in ("RGBA", "P"): 
                     image = image.convert("RGB")
                 
-                # Panggil fungsi AI Gemini
-                hasil_ekstraksi = ekstrak_ktp_dengan_gemini(image)
+                # Panggil fungsi AI Gemini (menambahkan status_text agar bisa dipantau di layar)
+                hasil_ekstraksi = ekstrak_ktp_dengan_gemini(image, status_text)
                 
                 row_data = {"No": i + 1}
                 row_data.update(hasil_ekstraksi)
@@ -89,7 +91,7 @@ if uploaded_files:
                 
                 # Jeda normal 10 detik antar KTP
                 if i < total_file - 1:
-                    status_text.text(f"KTP {i+1} selesai. Menjeda 10 detik agar aman dari limit...")
+                    status_text.text(f"KTP {i+1} berhasil. Menjeda 10 detik menuju KTP berikutnya...")
                     time.sleep(10)
                     
             except Exception as e:
