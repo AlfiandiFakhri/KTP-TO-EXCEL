@@ -7,7 +7,7 @@ import json
 import time
 
 st.title("Scanner KTP TO EXCEL")
-st.write("Batch Processing hingga 200 KTP dengan Rotasi API Key")
+st.write("200 KTP")
 
 # --- AMBIL API KEYS DARI STREAMLIT SECRETS (AMAN DARI GITHUB) ---
 if "API_KEYS" in st.secrets:
